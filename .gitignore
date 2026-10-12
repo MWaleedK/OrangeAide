@@ -24,6 +24,5 @@ rustc-ice-*.txt
 #.idea/
 
 # Remove Sensitive Data
-data/*
 checkpoints/*
-tokenizer/*
+
