@@ -3,17 +3,6 @@
 version = 4
 
 [[package]]
-name = "OrangeAide"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "candle-core",
- "candle-nn",
- "rand 0.10.3",
- "tokenizers 0.23.2",
-]
-
-[[package]]
 name = "ahash"
 version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -852,6 +841,17 @@ checksum = "1e68317604e77e53b85896388e1a803c1d21b74c899ec9e5e1112db90735edd7"
 dependencies = [
  "cc",
  "pkg-config",
+]
+
+[[package]]
+name = "orange_aide"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "candle-core",
+ "candle-nn",
+ "rand 0.10.3",
+ "tokenizers 0.23.2",
 ]
 
 [[package]]
