@@ -22,8 +22,8 @@ impl Default for TrainingConfig {
             hidden_dim: 1024,
             num_layers: 8,
 
-            learning_rate: 0.0003,
-            training_steps: 5_000,
+            learning_rate: 0.03,
+            training_steps: 500_000,
             batch_size: 64,
 
             layer_norm_eps: 1e-5,
