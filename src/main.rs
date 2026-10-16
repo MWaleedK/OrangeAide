@@ -1,6 +1,6 @@
 use orange_aide::{config, data, generate, model, train};
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use candle_core::{DType, Device};
 use candle_nn::{AdamW, VarBuilder, VarMap};
 use std::env;
@@ -64,8 +64,7 @@ fn create_model(
     device: &Device,
     varmap: &VarMap,
 ) -> Result<OrangeAideModel> {
-    let var_builder: VarBuilder =
-        VarBuilder::from_varmap(varmap, DType::F32, device);
+    let var_builder: VarBuilder = VarBuilder::from_varmap(varmap, DType::F32, device);
 
     let model: OrangeAideModel = OrangeAideModel::new(
         vocab_size,
@@ -100,14 +99,11 @@ fn train_model(fresh: bool) -> Result<()> {
     }
 
     let tokenizer = data::load_tokenizer()?;
-    let token_ids: Vec<u32> =
-        data::tokenize_text(&tokenizer, &corpus)?;
+    let token_ids: Vec<u32> = data::tokenize_text(&tokenizer, &corpus)?;
 
-    let (training_tokens, validation_tokens) =
-        data::split_tokens(&token_ids, 0.2)?;
+    let (training_tokens, validation_tokens) = data::split_tokens(&token_ids, 0.2)?;
 
-    let minimum_tokens: usize =
-        config.sequence_length + config.batch_size;
+    let minimum_tokens: usize = config.sequence_length + config.batch_size;
 
     if training_tokens.len() < minimum_tokens {
         bail!(
@@ -128,11 +124,9 @@ fn train_model(fresh: bool) -> Result<()> {
     let vocab_size: usize = tokenizer.get_vocab_size(true);
     let mut varmap: VarMap = VarMap::new();
 
-    let model: OrangeAideModel =
-        create_model(&config, vocab_size, &device, &varmap)?;
+    let model: OrangeAideModel = create_model(&config, vocab_size, &device, &varmap)?;
 
-    let checkpoint_path: &Path =
-        Path::new("checkpoints/orange_aide.safetensors");
+    let checkpoint_path: &Path = Path::new("checkpoints/orange_aide.safetensors");
 
     if !fresh && checkpoint_path.exists() {
         println!("Loading existing checkpoint...");
@@ -141,8 +135,7 @@ fn train_model(fresh: bool) -> Result<()> {
         println!("Starting with fresh model weights.");
     }
 
-    let mut optimizer: AdamW =
-        AdamW::new_lr(varmap.all_vars(), config.learning_rate)?;
+    let mut optimizer: AdamW = AdamW::new_lr(varmap.all_vars(), config.learning_rate)?;
 
     println!("Vocabulary size: {vocab_size}");
     println!("Total tokens: {}", token_ids.len());
@@ -153,14 +146,11 @@ fn train_model(fresh: bool) -> Result<()> {
 
     std::fs::create_dir_all("checkpoints")?;
 
-    let best_checkpoint: &Path =
-        Path::new("checkpoints/orange_aide_best.safetensors");
+    let best_checkpoint: &Path = Path::new("checkpoints/orange_aide_best.safetensors");
 
-    let latest_checkpoint: &Path =
-        Path::new("checkpoints/orange_aide_latest.safetensors");
+    let latest_checkpoint: &Path = Path::new("checkpoints/orange_aide_latest.safetensors");
 
-    let previous_checkpoint: &Path =
-        Path::new("checkpoints/orange_aide_previous.safetensors");
+    let previous_checkpoint: &Path = Path::new("checkpoints/orange_aide_previous.safetensors");
 
     // Never reuse a best checkpoint left over from an earlier run.
     if best_checkpoint.exists() {
@@ -169,7 +159,7 @@ fn train_model(fresh: bool) -> Result<()> {
 
     let monitor: train::MonitorConfig = train::MonitorConfig {
         eval_interval: 100,
-        checkpoint_interval: 1_000,
+        checkpoint_interval: 500,
         patience: 10,
         best_checkpoint,
         latest_checkpoint,
@@ -246,8 +236,7 @@ fn generate_text(prompt: &str) -> Result<()> {
     let config: TrainingConfig = TrainingConfig::default();
     let device: Device = train::best_device()?;
 
-    let checkpoint_path: &Path =
-        Path::new("checkpoints/orange_aide.safetensors");
+    let checkpoint_path: &Path = Path::new("checkpoints/orange_aide.safetensors");
 
     if !checkpoint_path.exists() {
         bail!(
@@ -261,13 +250,11 @@ fn generate_text(prompt: &str) -> Result<()> {
     let vocab_size: usize = tokenizer.get_vocab_size(true);
     let mut varmap: VarMap = VarMap::new();
 
-    let model: OrangeAideModel =
-        create_model(&config, vocab_size, &device, &varmap)?;
+    let model: OrangeAideModel = create_model(&config, vocab_size, &device, &varmap)?;
 
     train::load_checkpoint(&mut varmap, checkpoint_path)?;
 
-    let prompt_ids: Vec<u32> =
-        data::tokenize_text(&tokenizer, prompt)?;
+    let prompt_ids: Vec<u32> = data::tokenize_text(&tokenizer, prompt)?;
 
     if prompt_ids.is_empty() {
         bail!("The prompt produced no tokens.");
@@ -282,7 +269,7 @@ fn generate_text(prompt: &str) -> Result<()> {
         );
     }
 
-        // Sampling settings: lower temperature = safer/more repetitive,
+    // Sampling settings: lower temperature = safer/more repetitive,
     // higher = more varied. top_k limits choices to the k likeliest tokens.
     let temperature: f32 = 0.8;
     let top_k: usize = 40;
@@ -292,15 +279,8 @@ fn generate_text(prompt: &str) -> Result<()> {
         .map(|elapsed| elapsed.as_nanos() as u64)
         .unwrap_or(1);
 
-    let generated_ids: Vec<u32> = generate::generate_sampled(
-        &model,
-        &prompt_ids,
-        50,
-        temperature,
-        top_k,
-        seed,
-        &device,
-    )?;
+    let generated_ids: Vec<u32> =
+        generate::generate_sampled(&model, &prompt_ids, 50, temperature, top_k, seed, &device)?;
 
     let output: String = tokenizer
         .decode(&generated_ids, true)
