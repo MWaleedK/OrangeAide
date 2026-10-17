@@ -1839,7 +1839,137 @@ fn train_corpus_with_schedule_ends_at_the_minimum_learning_rate() {
 
     std::fs::remove_dir_all(&dir).unwrap();
 }
+fn tiny_model_with_layers(
+    device: &candle_core::Device,
+    layers: usize,
+) -> (candle_nn::VarMap, orange_aide::model::OrangeAideModel) {
+    use candle_core::DType;
+    use candle_nn::{VarBuilder, VarMap};
 
+    let varmap: VarMap = VarMap::new();
+    let var_builder: VarBuilder =
+        VarBuilder::from_varmap(&varmap, DType::F32, device);
+
+    let model = orange_aide::model::OrangeAideModel::new(
+        50, 8, 16, 2, 32, layers, 1e-5, var_builder, device,
+    )
+    .unwrap();
+
+    (varmap, model)
+}
+
+fn std_of(tensor: &candle_core::Tensor) -> f32 {
+    let values: Vec<f32> = tensor
+        .flatten_all()
+        .unwrap()
+        .to_vec1::<f32>()
+        .unwrap();
+
+    let mean: f32 = values.iter().sum::<f32>() / values.len() as f32;
+
+    (values.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / values.len() as f32)
+        .sqrt()
+}
+
+#[test]
+fn gpt_init_sets_small_weights_zero_biases_and_keeps_norms() {
+    use orange_aide::train::apply_gpt_init;
+
+    let device = candle_core::Device::Cpu;
+    let (varmap, _model) = tiny_model_with_layers(&device, 2);
+
+    apply_gpt_init(&varmap, 2, &device).unwrap();
+
+    let data = varmap.data().lock().unwrap();
+
+    for (name, var) in data.iter() {
+        let tensor = var.as_tensor();
+
+        if name.contains("norm") {
+            let expected: f32 = if name.ends_with(".weight") { 1.0 } else { 0.0 };
+            let values: Vec<f32> = tensor.to_vec1::<f32>().unwrap();
+            assert!(
+                values.iter().all(|v| (v - expected).abs() < 1e-6),
+                "{name} should be unchanged"
+            );
+        } else if name.ends_with(".bias") {
+            let values: Vec<f32> = tensor.flatten_all().unwrap().to_vec1::<f32>().unwrap();
+            assert!(values.iter().all(|v| *v == 0.0), "{name} should be zero");
+        } else if name.contains("attention.output") || name.contains("feed_forward.second") {
+            // 0.02 / sqrt(2 * 2 layers) = 0.01
+            let s: f32 = std_of(tensor);
+            assert!(s > 0.005 && s < 0.015, "{name} std {s} not near 0.01");
+        } else {
+            let s: f32 = std_of(tensor);
+            assert!(s > 0.012 && s < 0.03, "{name} std {s} not near 0.02");
+        }
+    }
+}
+
+#[test]
+fn gpt_init_shrinks_residual_projections_as_depth_grows() {
+    use orange_aide::train::apply_gpt_init;
+
+    let device = candle_core::Device::Cpu;
+
+    let (varmap_shallow, _m1) = tiny_model_with_layers(&device, 2);
+    let (varmap_deep, _m2) = tiny_model_with_layers(&device, 8);
+
+    apply_gpt_init(&varmap_shallow, 2, &device).unwrap();
+    apply_gpt_init(&varmap_deep, 8, &device).unwrap();
+
+    let name: &str = "block_0.attention.output.weight";
+
+    let shallow: f32 = std_of(
+        varmap_shallow.data().lock().unwrap().get(name).unwrap().as_tensor(),
+    );
+    let deep: f32 = std_of(
+        varmap_deep.data().lock().unwrap().get(name).unwrap().as_tensor(),
+    );
+
+    assert!(shallow > 1.5 * deep, "shallow {shallow} vs deep {deep}");
+}
+
+#[test]
+fn gpt_init_starts_near_random_guess_loss() {
+    use candle_core::Tensor;
+    use orange_aide::train::{apply_gpt_init, cross_entropy_loss};
+
+    let device = candle_core::Device::Cpu;
+    let (varmap, model) = tiny_model_with_layers(&device, 2);
+
+    apply_gpt_init(&varmap, 2, &device).unwrap();
+
+    let inputs: Tensor =
+        Tensor::new(&[[1u32, 2, 3, 4, 5, 6, 7, 8], [8u32, 7, 6, 5, 4, 3, 2, 1]], &device)
+            .unwrap();
+    let targets: Tensor =
+        Tensor::new(&[[2u32, 3, 4, 5, 6, 7, 8, 9], [7u32, 6, 5, 4, 3, 2, 1, 0]], &device)
+            .unwrap();
+
+    let logits: Tensor = model.forward(&inputs).unwrap();
+    let loss: f32 = cross_entropy_loss(&logits, &targets)
+        .unwrap()
+        .to_scalar::<f32>()
+        .unwrap();
+
+    let random_guess: f32 = (50f32).ln();
+
+    assert!(
+        (loss - random_guess).abs() < 0.25,
+        "starting loss {loss} is not near ln(50) = {random_guess}"
+    );
+}
+
+#[test]
+fn gpt_init_rejects_zero_layers() {
+    use orange_aide::train::apply_gpt_init;
+
+    let device = candle_core::Device::Cpu;
+    let (varmap, _model) = tiny_model_with_layers(&device, 2);
+
+    assert!(apply_gpt_init(&varmap, 0, &device).is_err());
+}
 
 
 

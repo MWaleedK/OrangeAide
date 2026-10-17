@@ -20,7 +20,7 @@ pub fn train_tokenizer() -> Result<()> {
     tokenizer.with_decoder(Some(ByteLevelDecoder::default()));
 
     let mut trainer: BpeTrainer = BpeTrainer::builder()
-        .vocab_size(20000)
+        .vocab_size(5000) //20000
         .min_frequency(2)
         .special_tokens(vec![
             AddedToken::from("<PAD>", true),

@@ -131,8 +131,9 @@ fn train_model(fresh: bool) -> Result<()> {
     if !fresh && checkpoint_path.exists() {
         println!("Loading existing checkpoint...");
         train::load_checkpoint(&mut varmap, checkpoint_path)?;
-    } else if fresh {
-        println!("Starting with fresh model weights.");
+    } else {
+        train::apply_gpt_init(&varmap, config.num_layers, &device)?;
+        println!("Starting with fresh GPT-style initialized weights.");
     }
 
     let mut optimizer: AdamW = AdamW::new_lr(varmap.all_vars(), config.learning_rate)?;

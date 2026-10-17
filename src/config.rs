@@ -17,12 +17,12 @@ impl Default for TrainingConfig {
     fn default() -> Self {
         Self {
             sequence_length: 64,
-            embedding_dim: 128,
-            num_heads: 4,
-            hidden_dim: 2048,
-            num_layers: 64,
+            embedding_dim: 256,
+            num_heads: 8,
+            hidden_dim: 1024,
+            num_layers: 6,
 
-            learning_rate: 0.0003,
+            learning_rate: 0.003,
             training_steps: 2000,
             batch_size: 32,
 

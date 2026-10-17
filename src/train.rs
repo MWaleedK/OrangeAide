@@ -695,5 +695,62 @@ pub fn train_corpus_with_schedule(
     Ok(losses)
 }
 
+/// GPT-2 style initialization for a freshly created model.
+///
+/// * Weights (including the embeddings and the output layer) are drawn
+///   from a normal distribution with standard deviation 0.02.
+/// * The two layers that write back into the residual stream (the
+///   attention output and the second feed-forward layer) use a smaller
+///   deviation, 0.02 / sqrt(2 * num_layers), so a deep model starts out
+///   close to "pass the token information straight through" instead of
+///   drowning it in random noise.
+/// * Biases are zero. Layer-norm parameters are left unchanged.
+///
+/// Call this only on a model that is about to be trained from scratch,
+/// never after loading a checkpoint.
+pub fn apply_gpt_init(
+    varmap: &VarMap,
+    num_layers: usize,
+    device: &Device,
+) -> Result<()> {
+    if num_layers == 0 {
+        anyhow::bail!("Number of layers cannot be zero");
+    }
+
+    let default_std: f32 = 0.02;
+    let residual_std: f32 = default_std / ((2 * num_layers) as f32).sqrt();
+
+    let data = varmap
+        .data()
+        .lock()
+        .map_err(|_| anyhow::anyhow!("Model variables are locked"))?;
+
+    for (name, var) in data.iter() {
+        if name.contains("norm") {
+            continue;
+        }
+
+        let shape = var.shape().clone();
+
+        let new_values: Tensor = if name.ends_with(".bias") {
+            Tensor::zeros(&shape, candle_core::DType::F32, device)?
+        } else {
+            let std: f32 = if name.contains("attention.output")
+                || name.contains("feed_forward.second")
+            {
+                residual_std
+            } else {
+                default_std
+            };
+
+            Tensor::randn(0f32, std, &shape, device)?
+        };
+
+        var.set(&new_values)?;
+    }
+
+    Ok(())
+}
+
 
 
