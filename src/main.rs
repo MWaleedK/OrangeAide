@@ -157,6 +157,7 @@ fn train_model(fresh: bool) -> Result<()> {
     println!("Validation tokens: {}", validation_tokens.len());
     println!("Training steps: {}", config.training_steps);
     println!("Base learning rate: {}", config.learning_rate);
+    println!("Num Layers: {}", config.num_layers);
 
     std::fs::create_dir_all("checkpoints")?;
 
