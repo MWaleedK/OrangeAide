@@ -20,11 +20,11 @@ impl Default for TrainingConfig {
             embedding_dim: 256,
             num_heads: 8,
             hidden_dim: 1024,
-            num_layers: 6,
+            num_layers: 32,
 
             learning_rate: 0.005,
             training_steps: 10000,
-            batch_size: 16,
+            batch_size: 32,
 
             layer_norm_eps: 1e-5,
         }
