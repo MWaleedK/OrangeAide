@@ -1,6 +1,7 @@
+
 use orange_aide::{config, data, generate, model, train};
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use candle_core::{DType, Device};
 use candle_nn::{AdamW, VarBuilder, VarMap};
 use std::env;
@@ -64,7 +65,8 @@ fn create_model(
     device: &Device,
     varmap: &VarMap,
 ) -> Result<OrangeAideModel> {
-    let var_builder: VarBuilder = VarBuilder::from_varmap(varmap, DType::F32, device);
+    let var_builder: VarBuilder =
+        VarBuilder::from_varmap(varmap, DType::F32, device);
 
     let model: OrangeAideModel = OrangeAideModel::new(
         vocab_size,
@@ -88,7 +90,11 @@ fn train_model(fresh: bool) -> Result<()> {
     println!("OrangeAide training");
     println!(
         "Device: {}",
-        if device.is_cuda() { "CUDA GPU" } else { "CPU" }
+        if device.is_cuda() {
+            "CUDA GPU"
+        } else {
+            "CPU"
+        }
     );
 
     let corpus_dir: &Path = Path::new("data");
@@ -101,7 +107,8 @@ fn train_model(fresh: bool) -> Result<()> {
     let tokenizer = data::load_tokenizer()?;
     let token_ids: Vec<u32> = data::tokenize_text(&tokenizer, &corpus)?;
 
-    let (training_tokens, validation_tokens) = data::split_tokens(&token_ids, 0.2)?;
+    let (training_tokens, validation_tokens) =
+        data::split_tokens(&token_ids, 0.2)?;
 
     let minimum_tokens: usize = config.sequence_length + config.batch_size;
 
@@ -124,9 +131,11 @@ fn train_model(fresh: bool) -> Result<()> {
     let vocab_size: usize = tokenizer.get_vocab_size(true);
     let mut varmap: VarMap = VarMap::new();
 
-    let model: OrangeAideModel = create_model(&config, vocab_size, &device, &varmap)?;
+    let model: OrangeAideModel =
+        create_model(&config, vocab_size, &device, &varmap)?;
 
-    let checkpoint_path: &Path = Path::new("checkpoints/orange_aide.safetensors");
+    let checkpoint_path: &Path =
+        Path::new("checkpoints/orange_aide.safetensors");
 
     if !fresh && checkpoint_path.exists() {
         println!("Loading existing checkpoint...");
@@ -136,24 +145,28 @@ fn train_model(fresh: bool) -> Result<()> {
         println!("Starting with fresh GPT-style initialized weights.");
     }
 
-    let mut optimizer: AdamW = AdamW::new_lr(varmap.all_vars(), config.learning_rate)?;
+    let mut optimizer: AdamW =
+        AdamW::new_lr(varmap.all_vars(), config.learning_rate)?;
 
     println!("Vocabulary size: {vocab_size}");
     println!("Total tokens: {}", token_ids.len());
     println!("Training tokens: {}", training_tokens.len());
     println!("Validation tokens: {}", validation_tokens.len());
     println!("Training steps: {}", config.training_steps);
-    println!("Learning rate: {}", config.learning_rate);
+    println!("Base learning rate: {}", config.learning_rate);
 
     std::fs::create_dir_all("checkpoints")?;
 
-    let best_checkpoint: &Path = Path::new("checkpoints/orange_aide_best.safetensors");
+    let best_checkpoint: &Path =
+        Path::new("checkpoints/orange_aide_best.safetensors");
 
-    let latest_checkpoint: &Path = Path::new("checkpoints/orange_aide_latest.safetensors");
+    let latest_checkpoint: &Path =
+        Path::new("checkpoints/orange_aide_latest.safetensors");
 
-    let previous_checkpoint: &Path = Path::new("checkpoints/orange_aide_previous.safetensors");
+    let previous_checkpoint: &Path =
+        Path::new("checkpoints/orange_aide_previous.safetensors");
 
-    // Never reuse a best checkpoint left over from an earlier run.
+    // Do not reuse a best checkpoint left over from an earlier run.
     if best_checkpoint.exists() {
         std::fs::remove_file(best_checkpoint)?;
     }
@@ -166,16 +179,25 @@ fn train_model(fresh: bool) -> Result<()> {
         latest_checkpoint,
     };
 
-    // Warm up briefly, then decay the learning rate down to 10% by the
-    // last step. Warmup matters after resuming because the optimizer's
-    // internal state starts from scratch.
-    let schedule: train::LearningRateSchedule = train::LearningRateSchedule {
-        base_lr: config.learning_rate,
-        warmup_steps: 100.min(config.training_steps),
-        min_lr_fraction: 0.1,
-    };
+    // Agreed adaptive learning-rate policy:
+    // - Warm up to the base LR over the first 100 steps.
+    // - A new best validation loss does not reduce the LR.
+    // - First consecutive miss: reduce current LR by 10%.
+    // - Second consecutive miss: reduce current LR by 10%.
+    // - Third consecutive miss: reduce current LR by 50%, then reset
+    //   the miss counter.
+    // - Repeat this cycle until validation improves.
+    // - Never reduce below 10% of the base learning rate.
+    //
+    // No per-step cosine decay should be applied after warmup.
+    let schedule: train::LearningRateSchedule =
+        train::LearningRateSchedule {
+            base_lr: config.learning_rate,
+            warmup_steps: 100.min(config.training_steps),
+            min_lr_fraction: 0.1,
+        };
 
-    // A new seed every run, so resumed runs see different training windows.
+    // Use a different sampling seed for each run.
     let seed: u64 = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|elapsed| elapsed.as_nanos() as u64)
@@ -204,7 +226,8 @@ fn train_model(fresh: bool) -> Result<()> {
         println!("Last training batch loss:  {last:.4}");
     }
 
-    // Replace the saved model only if this run beat it.
+    // Promote this run's best checkpoint only if it improved upon the
+    // starting weights, as determined by the training function.
     if best_checkpoint.exists() {
         if checkpoint_path.exists() {
             std::fs::copy(checkpoint_path, previous_checkpoint)?;
@@ -237,7 +260,8 @@ fn generate_text(prompt: &str) -> Result<()> {
     let config: TrainingConfig = TrainingConfig::default();
     let device: Device = train::best_device()?;
 
-    let checkpoint_path: &Path = Path::new("checkpoints/orange_aide.safetensors");
+    let checkpoint_path: &Path =
+        Path::new("checkpoints/orange_aide.safetensors");
 
     if !checkpoint_path.exists() {
         bail!(
@@ -251,11 +275,13 @@ fn generate_text(prompt: &str) -> Result<()> {
     let vocab_size: usize = tokenizer.get_vocab_size(true);
     let mut varmap: VarMap = VarMap::new();
 
-    let model: OrangeAideModel = create_model(&config, vocab_size, &device, &varmap)?;
+    let model: OrangeAideModel =
+        create_model(&config, vocab_size, &device, &varmap)?;
 
     train::load_checkpoint(&mut varmap, checkpoint_path)?;
 
-    let prompt_ids: Vec<u32> = data::tokenize_text(&tokenizer, prompt)?;
+    let prompt_ids: Vec<u32> =
+        data::tokenize_text(&tokenizer, prompt)?;
 
     if prompt_ids.is_empty() {
         bail!("The prompt produced no tokens.");
@@ -270,8 +296,8 @@ fn generate_text(prompt: &str) -> Result<()> {
         );
     }
 
-    // Sampling settings: lower temperature = safer/more repetitive,
-    // higher = more varied. top_k limits choices to the k likeliest tokens.
+    // Sampling settings: lower temperature is more conservative;
+    // higher temperature allows more variation.
     let temperature: f32 = 0.8;
     let top_k: usize = 40;
 
@@ -280,8 +306,15 @@ fn generate_text(prompt: &str) -> Result<()> {
         .map(|elapsed| elapsed.as_nanos() as u64)
         .unwrap_or(1);
 
-    let generated_ids: Vec<u32> =
-        generate::generate_sampled(&model, &prompt_ids, 50, temperature, top_k, seed, &device)?;
+    let generated_ids: Vec<u32> = generate::generate_sampled(
+        &model,
+        &prompt_ids,
+        50,
+        temperature,
+        top_k,
+        seed,
+        &device,
+    )?;
 
     let output: String = tokenizer
         .decode(&generated_ids, true)
