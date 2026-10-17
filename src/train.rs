@@ -1,3 +1,4 @@
+
 use anyhow::Result;
 use candle_core::{Device, Tensor};
 use candle_nn::{AdamW, Optimizer, VarMap};
@@ -33,10 +34,10 @@ pub fn cross_entropy_loss(logits: &Tensor, targets: &Tensor) -> Result<Tensor> {
     }
 
     let logits_flat: Tensor = logits.reshape((batch_size * sequence_length, vocab_size))?;
-
     let targets_flat: Tensor = targets.reshape(batch_size * sequence_length)?;
 
-    let log_probs: Tensor = candle_nn::ops::log_softmax(&logits_flat, candle_core::D::Minus1)?;
+    let log_probs: Tensor =
+        candle_nn::ops::log_softmax(&logits_flat, candle_core::D::Minus1)?;
 
     let target_log_probs: Tensor = log_probs
         .gather(&targets_flat.unsqueeze(1)?, 1)?
@@ -78,7 +79,6 @@ pub fn train_model(
 
     for _step in 0..steps {
         let loss: f32 = train_step(model, optimizer, inputs, targets)?;
-
         losses.push(loss);
     }
 
@@ -98,7 +98,6 @@ pub fn train_batches(
 
     for (inputs, targets) in batches {
         let loss: f32 = train_step(model, optimizer, inputs, targets)?;
-
         losses.push(loss);
     }
 
@@ -145,7 +144,6 @@ pub fn train_corpus(
 
     for step in 0..steps {
         let mut input_sequences: Vec<Vec<u32>> = Vec::with_capacity(batch_size);
-
         let mut target_sequences: Vec<Vec<u32>> = Vec::with_capacity(batch_size);
 
         for _ in 0..batch_size {
@@ -157,14 +155,15 @@ pub fn train_corpus(
 
             input_sequences.push(token_ids[start..start + sequence_length].to_vec());
 
-            target_sequences.push(token_ids[start + 1..start + sequence_length + 1].to_vec());
+            target_sequences.push(
+                token_ids[start + 1..start + sequence_length + 1].to_vec(),
+            );
         }
 
         let (inputs, targets) =
             crate::data::batch_to_tensors(&input_sequences, &target_sequences, device)?;
 
         let loss: f32 = train_step(model, optimizer, &inputs, &targets)?;
-
         losses.push(loss);
 
         if (step + 1) % 100 == 0 {
@@ -229,7 +228,8 @@ pub fn evaluate_loss(
         anyhow::bail!("Validation corpus must contain more tokens than the sequence length");
     }
 
-    let window_starts: Vec<usize> = validation_window_starts(token_ids.len(), sequence_length);
+    let window_starts: Vec<usize> =
+        validation_window_starts(token_ids.len(), sequence_length);
 
     let mut total_loss: f64 = 0.0;
     let mut total_sequences: usize = 0;
@@ -238,20 +238,20 @@ pub fn evaluate_loss(
         let current_batch_size: usize = batch_starts.len();
 
         let mut inputs: Vec<Vec<u32>> = Vec::with_capacity(current_batch_size);
-
         let mut targets: Vec<Vec<u32>> = Vec::with_capacity(current_batch_size);
 
         for &index in batch_starts {
             inputs.push(token_ids[index..index + sequence_length].to_vec());
 
-            targets.push(token_ids[index + 1..index + sequence_length + 1].to_vec());
+            targets.push(
+                token_ids[index + 1..index + sequence_length + 1].to_vec(),
+            );
         }
 
         let (input_tensor, target_tensor) =
             crate::data::batch_to_tensors(&inputs, &targets, device)?;
 
         let logits: Tensor = model.forward(&input_tensor)?;
-
         let loss: Tensor = cross_entropy_loss(&logits, &target_tensor)?;
 
         let loss_value: f32 = loss.to_scalar::<f32>()?;
@@ -348,13 +348,12 @@ pub struct MonitorConfig<'a> {
 
 /// Configuration for adaptive learning-rate decay.
 ///
-/// `base_lr` is the starting rate and `min_lr_fraction` defines the minimum
-/// rate as a fraction of `base_lr`. Warmup rises linearly to `base_lr`.
+/// `base_lr` is the starting rate. Warmup rises linearly to `base_lr`.
+/// There is no minimum learning-rate floor in the adaptive schedule.
 ///
 /// After warmup, the rate remains unchanged when validation improves.
-/// A validation result that fails to beat the best so far reduces the current
-/// rate by 10%. Every third consecutive miss instead reduces it by 50%, then
-/// resets the adaptive counter.
+/// Consecutive validation misses reduce the current rate by 10%, 10%, then
+/// 50%, repeating. An improvement resets the miss counter.
 #[derive(Debug, Clone, Copy)]
 pub struct LearningRateSchedule {
     pub base_lr: f64,
@@ -365,7 +364,8 @@ pub struct LearningRateSchedule {
 impl LearningRateSchedule {
     /// Configure an unchanged learning rate with no adaptive reductions.
     ///
-    /// Use a `min_lr_fraction` of 1.0 to prevent the rate from decreasing.
+    /// Use a `min_lr_fraction` of 1.0 to prevent the rate from decreasing
+    /// when using the cosine utility below.
     pub fn constant(learning_rate: f64) -> Self {
         Self {
             base_lr: learning_rate,
@@ -390,7 +390,10 @@ impl LearningRateSchedule {
             / decay_steps as f64)
             .clamp(0.0, 1.0);
 
-        min_lr + 0.5 * (self.base_lr - min_lr) * (1.0 + (std::f64::consts::PI * progress).cos())
+        min_lr
+            + 0.5
+                * (self.base_lr - min_lr)
+                * (1.0 + (std::f64::consts::PI * progress).cos())
     }
 }
 
@@ -398,10 +401,10 @@ impl LearningRateSchedule {
 ///
 /// An improvement resets the miss counter without increasing the LR.
 /// Misses reduce the current LR by 10%, 10%, then 50%, repeating.
-/// The rate never falls below `min_lr`.
+/// There is no minimum learning-rate floor.
 pub fn update_adaptive_learning_rate(
     current_lr: f64,
-    min_lr: f64,
+    _min_lr: f64,
     consecutive_misses: &mut usize,
     improved: bool,
 ) -> f64 {
@@ -414,9 +417,9 @@ pub fn update_adaptive_learning_rate(
 
     if *consecutive_misses >= 3 {
         *consecutive_misses = 0;
-        (current_lr * 0.5).max(min_lr)
+        current_lr * 0.5
     } else {
-        (current_lr * 0.9).max(min_lr)
+        current_lr * 0.9
     }
 }
 
@@ -430,7 +433,8 @@ fn xorshift64(state: &mut u64) -> u64 {
 
 /// Turns a seed into a well-mixed, non-zero random state.
 pub fn rng_state_from_seed(seed: u64) -> u64 {
-    let mut state: u64 = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0xA5A5_1234_9876_FEDC;
+    let mut state: u64 =
+        seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0xA5A5_1234_9876_FEDC;
 
     if state == 0 {
         state = 0xA5A5_1234_9876_FEDC;
@@ -444,7 +448,11 @@ pub fn rng_state_from_seed(seed: u64) -> u64 {
 }
 
 /// Samples window starts from `0..max_start`.
-pub fn sample_window_starts(rng_state: &mut u64, max_start: usize, count: usize) -> Vec<usize> {
+pub fn sample_window_starts(
+    rng_state: &mut u64,
+    max_start: usize,
+    count: usize,
+) -> Vec<usize> {
     (0..count)
         .map(|_| (xorshift64(rng_state) as usize) % max_start)
         .collect()
@@ -486,12 +494,10 @@ pub fn train_corpus_monitored(
 /// Adaptive policy after warmup:
 /// - Best validation loss: no decay and reset the miss counter.
 /// - First consecutive miss: reduce current LR by 10%.
-/// - Second consecutive miss: reduce current LR by 10%.
-/// - Third consecutive miss: reduce current LR by 50% instead, then reset
-///   the miss counter.
-/// - Repeat until validation improves or the minimum LR is reached.
+/// Second consecutive miss: reduce current LR by 10%.
+/// Third consecutive miss: reduce current LR by 50%, then reset the counter.
+/// - Repeat until validation improves.
 ///
-/// A miss means validation loss is equal to or worse than the best so far.
 /// Checkpoint and early-stopping behavior is preserved.
 pub fn train_corpus_with_schedule(
     model: &OrangeAideModel,
@@ -551,9 +557,9 @@ pub fn train_corpus_with_schedule(
         .map(|s| s.base_lr)
         .unwrap_or_else(|| optimizer.learning_rate());
 
-    let min_lr: f64 = schedule
-        .map(|s| (s.base_lr * s.min_lr_fraction).clamp(0.0, s.base_lr))
-        .unwrap_or(0.0);
+    // No adaptive minimum LR. The legacy schedule field is retained
+    // for API compatibility, but it does not cap adaptive decay.
+    let min_lr: f64 = 0.0;
 
     let mut consecutive_misses: usize = 0;
 
@@ -562,7 +568,9 @@ pub fn train_corpus_with_schedule(
             anyhow::bail!("Base learning rate must be finite and positive");
         }
 
-        if !s.min_lr_fraction.is_finite() || !(0.0..=1.0).contains(&s.min_lr_fraction) {
+        if !s.min_lr_fraction.is_finite()
+            || !(0.0..=1.0).contains(&s.min_lr_fraction)
+        {
             anyhow::bail!("Minimum learning-rate fraction must be between 0.0 and 1.0");
         }
     }
@@ -578,8 +586,8 @@ pub fn train_corpus_with_schedule(
 
     if let Some(s) = schedule {
         println!(
-            "Base LR: {:.8} | Minimum LR: {:.8} | Warmup steps: {}",
-            s.base_lr, min_lr, s.warmup_steps
+            "Base LR: {:.8} | Minimum LR: none | Warmup steps: {}",
+            s.base_lr, s.warmup_steps
         );
     }
 
@@ -591,21 +599,24 @@ pub fn train_corpus_with_schedule(
         if let Some(s) = schedule {
             if s.warmup_steps > 0 && step_number <= s.warmup_steps {
                 current_lr = s.base_lr * step_number as f64 / s.warmup_steps as f64;
-
                 optimizer.set_learning_rate(current_lr);
             }
         }
 
-        let starts: Vec<usize> = sample_window_starts(&mut rng_state, max_start, batch_size);
+        let starts: Vec<usize> =
+            sample_window_starts(&mut rng_state, max_start, batch_size);
 
         let mut input_sequences: Vec<Vec<u32>> = Vec::with_capacity(batch_size);
-
         let mut target_sequences: Vec<Vec<u32>> = Vec::with_capacity(batch_size);
 
         for start in starts {
-            input_sequences.push(training_tokens[start..start + sequence_length].to_vec());
+            input_sequences.push(
+                training_tokens[start..start + sequence_length].to_vec(),
+            );
 
-            target_sequences.push(training_tokens[start + 1..start + sequence_length + 1].to_vec());
+            target_sequences.push(
+                training_tokens[start + 1..start + sequence_length + 1].to_vec(),
+            );
         }
 
         let (inputs, targets) =
@@ -650,7 +661,20 @@ pub fn train_corpus_with_schedule(
 
                     optimizer.set_learning_rate(current_lr);
 
-                    println!("Validation miss: LR adjusted to {:.8}", current_lr);
+                    println!(
+                        "Validation miss #{}: LR adjusted to {:.8} ({})",
+                        if consecutive_misses == 0 {
+                            3
+                        } else {
+                            consecutive_misses
+                        },
+                        current_lr,
+                        if consecutive_misses == 0 {
+                            "50% decrease"
+                        } else {
+                            "10% decrease"
+                        }
+                    );
                 }
             }
 
@@ -697,7 +721,11 @@ pub fn train_corpus_with_schedule(
 /// Biases are zero; layer-normalization parameters are left unchanged.
 ///
 /// Call only on a fresh model, never after loading a checkpoint.
-pub fn apply_gpt_init(varmap: &VarMap, num_layers: usize, device: &Device) -> Result<()> {
+pub fn apply_gpt_init(
+    varmap: &VarMap,
+    num_layers: usize,
+    device: &Device,
+) -> Result<()> {
     if num_layers == 0 {
         anyhow::bail!("Number of layers cannot be zero");
     }

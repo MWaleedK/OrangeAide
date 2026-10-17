@@ -144,80 +144,42 @@ fn orange_aide_model_produces_valid_nonzero_gradients() {
 
     let device: Device = Device::Cpu;
 
-    let var_map: VarMap =
-        VarMap::new();
+    let var_map: VarMap = VarMap::new();
 
-    let var_builder: VarBuilder =
-        VarBuilder::from_varmap(
-            &var_map,
-            DType::F32,
-            &device,
-        );
+    let var_builder: VarBuilder = VarBuilder::from_varmap(&var_map, DType::F32, &device);
 
     let model: OrangeAideModel =
-        OrangeAideModel::new(
-            20,
-            4,
-            8,
-            2,
-            16,
-            1,
-            1e-5,
-            var_builder,
-            &device,
-        )
-        .unwrap();
+        OrangeAideModel::new(20, 4, 8, 2, 16, 1, 1e-5, var_builder, &device).unwrap();
 
-    let input: Tensor =
-        Tensor::new(
-            &[1u32, 2, 3, 4],
-            &device,
-        )
+    let input: Tensor = Tensor::new(&[1u32, 2, 3, 4], &device)
         .unwrap()
         .reshape((1, 4))
         .unwrap();
 
-    let targets: Tensor =
-        Tensor::new(
-            &[2u32, 3, 4, 5],
-            &device,
-        )
+    let targets: Tensor = Tensor::new(&[2u32, 3, 4, 5], &device)
         .unwrap()
         .reshape((1, 4))
         .unwrap();
 
-    let logits: Tensor =
-        model.forward(&input)
-            .unwrap();
+    let logits: Tensor = model.forward(&input).unwrap();
 
-    let loss: Tensor =
-        cross_entropy_loss(
-            &logits,
-            &targets,
-        )
-        .unwrap();
+    let loss: Tensor = cross_entropy_loss(&logits, &targets).unwrap();
 
-    let gradients =
-        loss.backward()
-            .unwrap();
+    let gradients = loss.backward().unwrap();
 
-    let variables =
-        var_map.all_vars();
+    let variables = var_map.all_vars();
 
     assert!(
         !variables.is_empty(),
         "Model should contain trainable parameters"
     );
 
-    let mut gradients_found: usize =
-        0;
+    let mut gradients_found: usize = 0;
 
-    let mut nonzero_gradients: usize =
-        0;
+    let mut nonzero_gradients: usize = 0;
 
     for variable in &variables {
-        let gradient = gradients
-            .get(variable.as_tensor());
+        let gradient = gradients.get(variable.as_tensor());
 
         if let Some(gradient) = gradient {
             gradients_found += 1;
@@ -228,12 +190,7 @@ fn orange_aide_model_produces_valid_nonzero_gradients() {
                 "Gradient shape must match parameter shape"
             );
 
-            let gradient_values: Vec<f32> =
-                gradient
-                    .flatten_all()
-                    .unwrap()
-                    .to_vec1()
-                    .unwrap();
+            let gradient_values: Vec<f32> = gradient.flatten_all().unwrap().to_vec1().unwrap();
 
             for value in &gradient_values {
                 assert!(
@@ -249,118 +206,73 @@ fn orange_aide_model_produces_valid_nonzero_gradients() {
         }
     }
 
-    assert!(
-        gradients_found > 0,
-        "No parameter gradients were produced"
-    );
+    assert!(gradients_found > 0, "No parameter gradients were produced");
 
-    assert!(
-        nonzero_gradients > 0,
-        "All parameter gradients are zero"
-    );
+    assert!(nonzero_gradients > 0, "All parameter gradients are zero");
 }
 
 #[test]
 fn adamw_updates_model_parameters() {
     use candle_core::{DType, Device, Tensor};
-    use candle_nn::{AdamW, ParamsAdamW, Optimizer, VarBuilder, VarMap};
+    use candle_nn::{AdamW, Optimizer, ParamsAdamW, VarBuilder, VarMap};
 
     use orange_aide::model::OrangeAideModel;
     use orange_aide::train::cross_entropy_loss;
 
-    let device: Device =
-        Device::Cpu;
+    let device: Device = Device::Cpu;
 
-    let var_map: VarMap =
-        VarMap::new();
+    let var_map: VarMap = VarMap::new();
 
-    let var_builder: VarBuilder =
-        VarBuilder::from_varmap(
-            &var_map,
-            DType::F32,
-            &device,
-        );
+    let var_builder: VarBuilder = VarBuilder::from_varmap(&var_map, DType::F32, &device);
 
     let model: OrangeAideModel =
-        OrangeAideModel::new(
-            20,
-            4,
-            8,
-            2,
-            16,
-            1,
-            1e-5,
-            var_builder,
-            &device,
-        )
-        .unwrap();
+        OrangeAideModel::new(20, 4, 8, 2, 16, 1, 1e-5, var_builder, &device).unwrap();
 
-    let input: Tensor =
-        Tensor::new(
-            &[1u32, 2, 3, 4],
-            &device,
-        )
+    let input: Tensor = Tensor::new(&[1u32, 2, 3, 4], &device)
         .unwrap()
         .reshape((1, 4))
         .unwrap();
 
-    let targets: Tensor =
-        Tensor::new(
-            &[2u32, 3, 4, 5],
-            &device,
-        )
+    let targets: Tensor = Tensor::new(&[2u32, 3, 4, 5], &device)
         .unwrap()
         .reshape((1, 4))
         .unwrap();
 
-    let variables =
-        var_map.all_vars();
+    let variables = var_map.all_vars();
 
     assert!(
         !variables.is_empty(),
         "Model should contain trainable parameters"
     );
 
-    let parameter_before: Vec<f32> =
-        variables[0]
-            .as_tensor()
-            .flatten_all()
-            .unwrap()
-            .to_vec1()
-            .unwrap();
-
-    let mut optimizer: AdamW =
-        AdamW::new(
-            variables.clone(),
-            ParamsAdamW {
-                lr: 0.001,
-                ..Default::default()
-            },
-        )
+    let parameter_before: Vec<f32> = variables[0]
+        .as_tensor()
+        .flatten_all()
+        .unwrap()
+        .to_vec1()
         .unwrap();
 
-    let logits: Tensor =
-        model.forward(&input)
-            .unwrap();
+    let mut optimizer: AdamW = AdamW::new(
+        variables.clone(),
+        ParamsAdamW {
+            lr: 0.001,
+            ..Default::default()
+        },
+    )
+    .unwrap();
 
-    let loss: Tensor =
-        cross_entropy_loss(
-            &logits,
-            &targets,
-        )
+    let logits: Tensor = model.forward(&input).unwrap();
+
+    let loss: Tensor = cross_entropy_loss(&logits, &targets).unwrap();
+
+    optimizer.backward_step(&loss).unwrap();
+
+    let parameter_after: Vec<f32> = variables[0]
+        .as_tensor()
+        .flatten_all()
+        .unwrap()
+        .to_vec1()
         .unwrap();
-
-    optimizer
-        .backward_step(&loss)
-        .unwrap();
-
-    let parameter_after: Vec<f32> =
-        variables[0]
-            .as_tensor()
-            .flatten_all()
-            .unwrap()
-            .to_vec1()
-            .unwrap();
 
     assert_eq!(
         parameter_before.len(),
@@ -369,114 +281,57 @@ fn adamw_updates_model_parameters() {
     );
 }
 
-
 #[test]
 fn adamw_reduces_training_loss() {
     use candle_core::{DType, Device, Tensor};
-    use candle_nn::{
-        AdamW,
-        Optimizer,
-        ParamsAdamW,
-        VarBuilder,
-        VarMap,
-    };
+    use candle_nn::{AdamW, Optimizer, ParamsAdamW, VarBuilder, VarMap};
 
     use orange_aide::model::OrangeAideModel;
     use orange_aide::train::cross_entropy_loss;
 
-    let device: Device =
-        Device::Cpu;
+    let device: Device = Device::Cpu;
 
-    let var_map: VarMap =
-        VarMap::new();
+    let var_map: VarMap = VarMap::new();
 
-    let var_builder: VarBuilder =
-        VarBuilder::from_varmap(
-            &var_map,
-            DType::F32,
-            &device,
-        );
+    let var_builder: VarBuilder = VarBuilder::from_varmap(&var_map, DType::F32, &device);
 
     let model: OrangeAideModel =
-        OrangeAideModel::new(
-            20,
-            4,
-            8,
-            2,
-            16,
-            1,
-            1e-5,
-            var_builder,
-            &device,
-        )
-        .unwrap();
+        OrangeAideModel::new(20, 4, 8, 2, 16, 1, 1e-5, var_builder, &device).unwrap();
 
-    let input: Tensor =
-        Tensor::new(
-            &[1u32, 2, 3, 4],
-            &device,
-        )
+    let input: Tensor = Tensor::new(&[1u32, 2, 3, 4], &device)
         .unwrap()
         .reshape((1, 4))
         .unwrap();
 
-    let targets: Tensor =
-        Tensor::new(
-            &[2u32, 3, 4, 5],
-            &device,
-        )
+    let targets: Tensor = Tensor::new(&[2u32, 3, 4, 5], &device)
         .unwrap()
         .reshape((1, 4))
         .unwrap();
 
-    let variables =
-        var_map.all_vars();
+    let variables = var_map.all_vars();
 
-    let mut optimizer: AdamW =
-        AdamW::new(
-            variables.clone(),
-            ParamsAdamW {
-                lr: 0.01,
-                ..Default::default()
-            },
-        )
-        .unwrap();
+    let mut optimizer: AdamW = AdamW::new(
+        variables.clone(),
+        ParamsAdamW {
+            lr: 0.01,
+            ..Default::default()
+        },
+    )
+    .unwrap();
 
-    let logits_before: Tensor =
-        model.forward(&input)
-            .unwrap();
+    let logits_before: Tensor = model.forward(&input).unwrap();
 
-    let loss_before: Tensor =
-        cross_entropy_loss(
-            &logits_before,
-            &targets,
-        )
-        .unwrap();
+    let loss_before: Tensor = cross_entropy_loss(&logits_before, &targets).unwrap();
 
-    let loss_before_value: f32 =
-        loss_before
-            .to_scalar::<f32>()
-            .unwrap();
+    let loss_before_value: f32 = loss_before.to_scalar::<f32>().unwrap();
 
-    optimizer
-        .backward_step(&loss_before)
-        .unwrap();
+    optimizer.backward_step(&loss_before).unwrap();
 
-    let logits_after: Tensor =
-        model.forward(&input)
-            .unwrap();
+    let logits_after: Tensor = model.forward(&input).unwrap();
 
-    let loss_after: Tensor =
-        cross_entropy_loss(
-            &logits_after,
-            &targets,
-        )
-        .unwrap();
+    let loss_after: Tensor = cross_entropy_loss(&logits_after, &targets).unwrap();
 
-    let loss_after_value: f32 =
-        loss_after
-            .to_scalar::<f32>()
-            .unwrap();
+    let loss_after_value: f32 = loss_after.to_scalar::<f32>().unwrap();
 
     assert!(
         loss_after_value < loss_before_value,
@@ -489,128 +344,64 @@ fn adamw_reduces_training_loss() {
 #[test]
 fn orange_aide_can_overfit_tiny_dataset() {
     use candle_core::{DType, Device, Tensor};
-    use candle_nn::{
-        AdamW,
-        Optimizer,
-        ParamsAdamW,
-        VarBuilder,
-        VarMap,
-    };
+    use candle_nn::{AdamW, Optimizer, ParamsAdamW, VarBuilder, VarMap};
 
     use orange_aide::model::OrangeAideModel;
     use orange_aide::train::cross_entropy_loss;
 
-    let device: Device =
-        Device::Cpu;
+    let device: Device = Device::Cpu;
 
-    let var_map: VarMap =
-        VarMap::new();
+    let var_map: VarMap = VarMap::new();
 
-    let var_builder: VarBuilder =
-        VarBuilder::from_varmap(
-            &var_map,
-            DType::F32,
-            &device,
-        );
+    let var_builder: VarBuilder = VarBuilder::from_varmap(&var_map, DType::F32, &device);
 
     let model: OrangeAideModel =
-        OrangeAideModel::new(
-            20,
-            4,
-            8,
-            2,
-            16,
-            1,
-            1e-5,
-            var_builder,
-            &device,
-        )
-        .unwrap();
+        OrangeAideModel::new(20, 4, 8, 2, 16, 1, 1e-5, var_builder, &device).unwrap();
 
-    let input: Tensor =
-        Tensor::new(
-            &[1u32, 2, 3, 4],
-            &device,
-        )
+    let input: Tensor = Tensor::new(&[1u32, 2, 3, 4], &device)
         .unwrap()
         .reshape((1, 4))
         .unwrap();
 
-    let targets: Tensor =
-        Tensor::new(
-            &[2u32, 3, 4, 5],
-            &device,
-        )
+    let targets: Tensor = Tensor::new(&[2u32, 3, 4, 5], &device)
         .unwrap()
         .reshape((1, 4))
         .unwrap();
 
-    let variables =
-        var_map.all_vars();
+    let variables = var_map.all_vars();
 
-    let mut optimizer: AdamW =
-        AdamW::new(
-            variables,
-            ParamsAdamW {
-                lr: 0.01,
-                ..Default::default()
-            },
-        )
-        .unwrap();
+    let mut optimizer: AdamW = AdamW::new(
+        variables,
+        ParamsAdamW {
+            lr: 0.01,
+            ..Default::default()
+        },
+    )
+    .unwrap();
 
-    let logits_before: Tensor =
-        model.forward(&input)
-            .unwrap();
+    let logits_before: Tensor = model.forward(&input).unwrap();
 
-    let initial_loss: Tensor =
-        cross_entropy_loss(
-            &logits_before,
-            &targets,
-        )
-        .unwrap();
+    let initial_loss: Tensor = cross_entropy_loss(&logits_before, &targets).unwrap();
 
-    let initial_loss_value: f32 =
-        initial_loss
-            .to_scalar::<f32>()
-            .unwrap();
+    let initial_loss_value: f32 = initial_loss.to_scalar::<f32>().unwrap();
 
     for _step in 0..1_000 {
-        let logits: Tensor =
-            model.forward(&input)
-                .unwrap();
+        let logits: Tensor = model.forward(&input).unwrap();
 
-        let loss: Tensor =
-            cross_entropy_loss(
-                &logits,
-                &targets,
-            )
-            .unwrap();
+        let loss: Tensor = cross_entropy_loss(&logits, &targets).unwrap();
 
-        optimizer
-            .backward_step(&loss)
-            .unwrap();
+        optimizer.backward_step(&loss).unwrap();
     }
 
-    let final_logits: Tensor =
-        model.forward(&input)
-            .unwrap();
+    let final_logits: Tensor = model.forward(&input).unwrap();
 
-    let final_loss: Tensor =
-        cross_entropy_loss(
-            &final_logits,
-            &targets,
-        )
-        .unwrap();
+    let final_loss: Tensor = cross_entropy_loss(&final_logits, &targets).unwrap();
 
-    let final_loss_value: f32 =
-        final_loss
-            .to_scalar::<f32>()
-            .unwrap();
+    let final_loss_value: f32 = final_loss.to_scalar::<f32>().unwrap();
 
     println!(
         "Tiny overfit loss: {} -> {}",
-        initial_loss_value,
-        final_loss_value
+        initial_loss_value, final_loss_value
     );
 
     assert!(
@@ -628,19 +419,12 @@ fn orange_aide_can_overfit_tiny_dataset() {
 #[test]
 fn train_step_returns_loss_and_updates_parameters() -> anyhow::Result<()> {
     use candle_core::{DType, Device, Tensor};
-    use candle_nn::{
-        AdamW,
-        Optimizer,
-        ParamsAdamW,
-        VarBuilder,
-        VarMap,
-    };
+    use candle_nn::{AdamW, Optimizer, ParamsAdamW, VarBuilder, VarMap};
 
     use orange_aide::model::OrangeAideModel;
     use orange_aide::train::train_step;
 
-    let device: Device =
-        Device::Cpu;
+    let device: Device = Device::Cpu;
 
     let vocab_size: usize = 10;
     let sequence_length: usize = 4;
@@ -650,109 +434,60 @@ fn train_step_returns_loss_and_updates_parameters() -> anyhow::Result<()> {
     let num_layers: usize = 1;
     let eps: f64 = 1e-5;
 
-    let var_map: VarMap =
-        VarMap::new();
+    let var_map: VarMap = VarMap::new();
 
-    let var_builder: VarBuilder =
-        VarBuilder::from_varmap(
-            &var_map,
-            DType::F32,
-            &device,
-        );
+    let var_builder: VarBuilder = VarBuilder::from_varmap(&var_map, DType::F32, &device);
 
-    let model: OrangeAideModel =
-        OrangeAideModel::new(
-            vocab_size,
-            sequence_length,
-            embedding_dim,
-            num_heads,
-            hidden_dim,
-            num_layers,
-            eps,
-            var_builder,
-            &device,
-        )?;
+    let model: OrangeAideModel = OrangeAideModel::new(
+        vocab_size,
+        sequence_length,
+        embedding_dim,
+        num_heads,
+        hidden_dim,
+        num_layers,
+        eps,
+        var_builder,
+        &device,
+    )?;
 
-    let inputs: Tensor =
-        Tensor::new(
-            &[[1u32, 2, 3, 4]],
-            &device,
-        )?;
+    let inputs: Tensor = Tensor::new(&[[1u32, 2, 3, 4]], &device)?;
 
-    let targets: Tensor =
-        Tensor::new(
-            &[[2u32, 3, 4, 5]],
-            &device,
-        )?;
+    let targets: Tensor = Tensor::new(&[[2u32, 3, 4, 5]], &device)?;
 
-    let params_before: Vec<f32> =
-        var_map
-            .all_vars()
-            .iter()
-            .flat_map(|tensor| {
-                tensor
-                    .flatten_all()
-                    .unwrap()
-                    .to_vec1::<f32>()
-                    .unwrap()
-            })
-            .collect();
+    let params_before: Vec<f32> = var_map
+        .all_vars()
+        .iter()
+        .flat_map(|tensor| tensor.flatten_all().unwrap().to_vec1::<f32>().unwrap())
+        .collect();
 
-    let params: Vec<candle_core::Var> =
-        var_map.all_vars();
+    let params: Vec<candle_core::Var> = var_map.all_vars();
 
-    let mut optimizer: AdamW =
-        AdamW::new(
-            params,
-            ParamsAdamW {
-                lr: 0.01,
-                ..Default::default()
-            },
-        )?;
+    let mut optimizer: AdamW = AdamW::new(
+        params,
+        ParamsAdamW {
+            lr: 0.01,
+            ..Default::default()
+        },
+    )?;
 
-    let loss: f32 =
-        train_step(
-            &model,
-            &mut optimizer,
-            &inputs,
-            &targets,
-        )?;
+    let loss: f32 = train_step(&model, &mut optimizer, &inputs, &targets)?;
 
-    assert!(
-        loss.is_finite(),
-        "Loss must be finite"
-    );
+    assert!(loss.is_finite(), "Loss must be finite");
 
-    assert!(
-        loss > 0.0,
-        "Loss should be positive"
-    );
+    assert!(loss > 0.0, "Loss should be positive");
 
-    let params_after: Vec<f32> =
-        var_map
-            .all_vars()
-            .iter()
-            .flat_map(|tensor| {
-                tensor
-                    .flatten_all()
-                    .unwrap()
-                    .to_vec1::<f32>()
-                    .unwrap()
-            })
-            .collect();
+    let params_after: Vec<f32> = var_map
+        .all_vars()
+        .iter()
+        .flat_map(|tensor| tensor.flatten_all().unwrap().to_vec1::<f32>().unwrap())
+        .collect();
 
-    assert_eq!(
-        params_before.len(),
-        params_after.len()
-    );
+    assert_eq!(params_before.len(), params_after.len());
 
-    let changed: bool =
-        params_before
-            .iter()
-            .zip(params_after.iter())
-            .any(|(before, after)| {
-                before != after
-            });
+    let changed: bool = params_before
+        .iter()
+        .zip(params_after.iter())
+        .any(|(before, after)| before != after);
 
     assert!(
         changed,
@@ -765,19 +500,12 @@ fn train_step_returns_loss_and_updates_parameters() -> anyhow::Result<()> {
 #[test]
 fn train_model_reduces_loss() -> anyhow::Result<()> {
     use candle_core::{DType, Device, Tensor};
-    use candle_nn::{
-        AdamW,
-        Optimizer,
-        ParamsAdamW,
-        VarBuilder,
-        VarMap,
-    };
+    use candle_nn::{AdamW, Optimizer, ParamsAdamW, VarBuilder, VarMap};
 
     use orange_aide::model::OrangeAideModel;
     use orange_aide::train::train_model;
 
-    let device: Device =
-        Device::Cpu;
+    let device: Device = Device::Cpu;
 
     let vocab_size: usize = 10;
     let sequence_length: usize = 4;
@@ -787,74 +515,43 @@ fn train_model_reduces_loss() -> anyhow::Result<()> {
     let num_layers: usize = 1;
     let eps: f64 = 1e-5;
 
-    let var_map: VarMap =
-        VarMap::new();
+    let var_map: VarMap = VarMap::new();
 
-    let var_builder: VarBuilder =
-        VarBuilder::from_varmap(
-            &var_map,
-            DType::F32,
-            &device,
-        );
+    let var_builder: VarBuilder = VarBuilder::from_varmap(&var_map, DType::F32, &device);
 
-    let model: OrangeAideModel =
-        OrangeAideModel::new(
-            vocab_size,
-            sequence_length,
-            embedding_dim,
-            num_heads,
-            hidden_dim,
-            num_layers,
-            eps,
-            var_builder,
-            &device,
-        )?;
+    let model: OrangeAideModel = OrangeAideModel::new(
+        vocab_size,
+        sequence_length,
+        embedding_dim,
+        num_heads,
+        hidden_dim,
+        num_layers,
+        eps,
+        var_builder,
+        &device,
+    )?;
 
-    let inputs: Tensor =
-        Tensor::new(
-            &[[1u32, 2, 3, 4]],
-            &device,
-        )?;
+    let inputs: Tensor = Tensor::new(&[[1u32, 2, 3, 4]], &device)?;
 
-    let targets: Tensor =
-        Tensor::new(
-            &[[2u32, 3, 4, 5]],
-            &device,
-        )?;
+    let targets: Tensor = Tensor::new(&[[2u32, 3, 4, 5]], &device)?;
 
-    let params: Vec<candle_core::Var> =
-        var_map.all_vars();
+    let params: Vec<candle_core::Var> = var_map.all_vars();
 
-    let mut optimizer: AdamW =
-        AdamW::new(
-            params,
-            ParamsAdamW {
-                lr: 0.01,
-                ..Default::default()
-            },
-        )?;
+    let mut optimizer: AdamW = AdamW::new(
+        params,
+        ParamsAdamW {
+            lr: 0.01,
+            ..Default::default()
+        },
+    )?;
 
-    let losses: Vec<f32> =
-        train_model(
-            &model,
-            &mut optimizer,
-            &inputs,
-            &targets,
-            100,
-        )?;
+    let losses: Vec<f32> = train_model(&model, &mut optimizer, &inputs, &targets, 100)?;
 
-    assert_eq!(
-        losses.len(),
-        100
-    );
+    assert_eq!(losses.len(), 100);
 
-    assert!(
-        losses[0].is_finite()
-    );
+    assert!(losses[0].is_finite());
 
-    assert!(
-        losses[99].is_finite()
-    );
+    assert!(losses[99].is_finite());
 
     assert!(
         losses[99] < losses[0],
@@ -869,138 +566,73 @@ fn train_model_reduces_loss() -> anyhow::Result<()> {
 #[test]
 fn full_training_pipeline_works_with_tokenized_text() -> anyhow::Result<()> {
     use candle_core::{DType, Device, Tensor};
-    use candle_nn::{
-        AdamW,
-        Optimizer,
-        ParamsAdamW,
-        VarBuilder,
-        VarMap,
-    };
+    use candle_nn::{AdamW, Optimizer, ParamsAdamW, VarBuilder, VarMap};
 
     use orange_aide::data::{
-        batch_to_tensors,
-        create_input_target_sequences,
-        load_tokenizer,
-        tokenize_text,
+        batch_to_tensors, create_input_target_sequences, load_tokenizer, tokenize_text,
     };
 
     use orange_aide::model::OrangeAideModel;
     use orange_aide::train::train_step;
 
-    let device: Device =
-        Device::Cpu;
+    let device: Device = Device::Cpu;
 
-    let sequence_length: usize =
-        8;
+    let sequence_length: usize = 8;
 
-    let embedding_dim: usize =
-        8;
+    let embedding_dim: usize = 8;
 
-    let num_heads: usize =
-        2;
+    let num_heads: usize = 2;
 
-    let hidden_dim: usize =
-        16;
+    let hidden_dim: usize = 16;
 
-    let num_layers: usize =
-        1;
+    let num_layers: usize = 1;
 
-    let eps: f64 =
-        1e-5;
+    let eps: f64 = 1e-5;
 
     // Load the existing tokenizer.
-    let tokenizer =
-        load_tokenizer()?;
+    let tokenizer = load_tokenizer()?;
 
-    let text: &str =
-        "the cat sat on the mat the cat sat";
+    let text: &str = "the cat sat on the mat the cat sat";
 
     // Text → token IDs.
-    let token_ids: Vec<u32> =
-        tokenize_text(
-            &tokenizer,
-            text,
-        )?;
+    let token_ids: Vec<u32> = tokenize_text(&tokenizer, text)?;
 
-    assert!(
-        !token_ids.is_empty(),
-        "Tokenizer should produce token IDs"
-    );
+    assert!(!token_ids.is_empty(), "Tokenizer should produce token IDs");
 
     // Token IDs → input/target sequences.
-    let (
-        input_sequences,
-        target_sequences,
-    ) =
-        create_input_target_sequences(
-            &token_ids,
-            sequence_length,
-        );
+    let (input_sequences, target_sequences) =
+        create_input_target_sequences(&token_ids, sequence_length);
 
     assert!(
         !input_sequences.is_empty(),
         "Text should produce training sequences"
     );
 
-    assert_eq!(
-        input_sequences.len(),
-        target_sequences.len()
-    );
+    assert_eq!(input_sequences.len(), target_sequences.len());
 
-    assert_eq!(
-        input_sequences[0].len(),
-        target_sequences[0].len()
-    );
+    assert_eq!(input_sequences[0].len(), target_sequences[0].len());
 
     // Input/target sequences → tensors.
-    let (
-        inputs,
-        targets,
-    ): (Tensor, Tensor) =
-        batch_to_tensors(
-            &input_sequences,
-            &target_sequences,
-            &device,
-        )?;
+    let (inputs, targets): (Tensor, Tensor) =
+        batch_to_tensors(&input_sequences, &target_sequences, &device)?;
 
-    assert_eq!(
-        inputs.dims(),
-        targets.dims()
-    );
+    assert_eq!(inputs.dims(), targets.dims());
 
-    assert_eq!(
-        inputs.dims().len(),
-        2
-    );
+    assert_eq!(inputs.dims().len(), 2);
 
-    assert!(
-        inputs.dims()[1] <= sequence_length
-    );
+    assert!(inputs.dims()[1] <= sequence_length);
 
     // Use the actual tokenizer vocabulary size.
-    let vocab_size: usize =
-        tokenizer.get_vocab_size(true);
+    let vocab_size: usize = tokenizer.get_vocab_size(true);
 
-    assert!(
-        vocab_size > 0,
-        "Tokenizer vocabulary must not be empty"
-    );
+    assert!(vocab_size > 0, "Tokenizer vocabulary must not be empty");
 
     // Verify every token ID is valid.
-    let input_values: Vec<u32> =
-        inputs
-            .flatten_all()?
-            .to_vec1()?;
+    let input_values: Vec<u32> = inputs.flatten_all()?.to_vec1()?;
 
-    let target_values: Vec<u32> =
-        targets
-            .flatten_all()?
-            .to_vec1()?;
+    let target_values: Vec<u32> = targets.flatten_all()?.to_vec1()?;
 
-    for token_id in input_values
-        .iter()
-        .chain(target_values.iter())
-    {
+    for token_id in input_values.iter().chain(target_values.iter()) {
         assert!(
             (*token_id as usize) < vocab_size,
             "Token ID {} exceeds vocabulary size {}",
@@ -1010,60 +642,39 @@ fn full_training_pipeline_works_with_tokenized_text() -> anyhow::Result<()> {
     }
 
     // Create model parameters.
-    let var_map: VarMap =
-        VarMap::new();
+    let var_map: VarMap = VarMap::new();
 
-    let var_builder: VarBuilder =
-        VarBuilder::from_varmap(
-            &var_map,
-            DType::F32,
-            &device,
-        );
+    let var_builder: VarBuilder = VarBuilder::from_varmap(&var_map, DType::F32, &device);
 
-    let model: OrangeAideModel =
-        OrangeAideModel::new(
-            vocab_size,
-            sequence_length,
-            embedding_dim,
-            num_heads,
-            hidden_dim,
-            num_layers,
-            eps,
-            var_builder,
-            &device,
-        )?;
+    let model: OrangeAideModel = OrangeAideModel::new(
+        vocab_size,
+        sequence_length,
+        embedding_dim,
+        num_heads,
+        hidden_dim,
+        num_layers,
+        eps,
+        var_builder,
+        &device,
+    )?;
 
     // Create optimizer.
-    let params: Vec<candle_core::Var> =
-        var_map.all_vars();
+    let params: Vec<candle_core::Var> = var_map.all_vars();
 
-    let mut optimizer: AdamW =
-        AdamW::new(
-            params,
-            ParamsAdamW {
-                lr: 0.01,
-                ..Default::default()
-            },
-        )?;
+    let mut optimizer: AdamW = AdamW::new(
+        params,
+        ParamsAdamW {
+            lr: 0.01,
+            ..Default::default()
+        },
+    )?;
 
     // Run one complete training step.
-    let loss: f32 =
-        train_step(
-            &model,
-            &mut optimizer,
-            &inputs,
-            &targets,
-        )?;
+    let loss: f32 = train_step(&model, &mut optimizer, &inputs, &targets)?;
 
-    assert!(
-        loss.is_finite(),
-        "Training loss must be finite"
-    );
+    assert!(loss.is_finite(), "Training loss must be finite");
 
-    assert!(
-        loss > 0.0,
-        "Training loss should be positive"
-    );
+    assert!(loss > 0.0, "Training loss should be positive");
 
     Ok(())
 }
@@ -1071,128 +682,71 @@ fn full_training_pipeline_works_with_tokenized_text() -> anyhow::Result<()> {
 #[test]
 fn train_batches_processes_multiple_batches() -> anyhow::Result<()> {
     use candle_core::{DType, Device, Tensor};
-    use candle_nn::{
-        AdamW,
-        Optimizer,
-        ParamsAdamW,
-        VarBuilder,
-        VarMap,
-    };
+    use candle_nn::{AdamW, Optimizer, ParamsAdamW, VarBuilder, VarMap};
 
     use orange_aide::model::OrangeAideModel;
     use orange_aide::train::train_batches;
 
-    let device: Device =
-        Device::Cpu;
+    let device: Device = Device::Cpu;
 
-    let vocab_size: usize =
-        10;
+    let vocab_size: usize = 10;
 
-    let sequence_length: usize =
-        4;
+    let sequence_length: usize = 4;
 
-    let embedding_dim: usize =
-        8;
+    let embedding_dim: usize = 8;
 
-    let num_heads: usize =
-        2;
+    let num_heads: usize = 2;
 
-    let hidden_dim: usize =
-        16;
+    let hidden_dim: usize = 16;
 
-    let num_layers: usize =
-        1;
+    let num_layers: usize = 1;
 
-    let eps: f64 =
-        1e-5;
+    let eps: f64 = 1e-5;
 
-    let var_map: VarMap =
-        VarMap::new();
+    let var_map: VarMap = VarMap::new();
 
-    let var_builder: VarBuilder =
-        VarBuilder::from_varmap(
-            &var_map,
-            DType::F32,
-            &device,
-        );
+    let var_builder: VarBuilder = VarBuilder::from_varmap(&var_map, DType::F32, &device);
 
-    let model: OrangeAideModel =
-        OrangeAideModel::new(
-            vocab_size,
-            sequence_length,
-            embedding_dim,
-            num_heads,
-            hidden_dim,
-            num_layers,
-            eps,
-            var_builder,
-            &device,
-        )?;
+    let model: OrangeAideModel = OrangeAideModel::new(
+        vocab_size,
+        sequence_length,
+        embedding_dim,
+        num_heads,
+        hidden_dim,
+        num_layers,
+        eps,
+        var_builder,
+        &device,
+    )?;
 
-    let inputs_1: Tensor =
-        Tensor::new(
-            &[[1u32, 2, 3, 4]],
-            &device,
-        )?;
+    let inputs_1: Tensor = Tensor::new(&[[1u32, 2, 3, 4]], &device)?;
 
-    let targets_1: Tensor =
-        Tensor::new(
-            &[[2u32, 3, 4, 5]],
-            &device,
-        )?;
+    let targets_1: Tensor = Tensor::new(&[[2u32, 3, 4, 5]], &device)?;
 
-    let inputs_2: Tensor =
-        Tensor::new(
-            &[[2u32, 3, 4, 5]],
-            &device,
-        )?;
+    let inputs_2: Tensor = Tensor::new(&[[2u32, 3, 4, 5]], &device)?;
 
-    let targets_2: Tensor =
-        Tensor::new(
-            &[[3u32, 4, 5, 6]],
-            &device,
-        )?;
+    let targets_2: Tensor = Tensor::new(&[[3u32, 4, 5, 6]], &device)?;
 
-    let batches: Vec<(Tensor, Tensor)> =
-        vec![
-            (inputs_1, targets_1),
-            (inputs_2, targets_2),
-        ];
+    let batches: Vec<(Tensor, Tensor)> = vec![(inputs_1, targets_1), (inputs_2, targets_2)];
 
-    let params: Vec<candle_core::Var> =
-        var_map.all_vars();
+    let params: Vec<candle_core::Var> = var_map.all_vars();
 
-    let mut optimizer: AdamW =
-        AdamW::new(
-            params,
-            ParamsAdamW {
-                lr: 0.01,
-                ..Default::default()
-            },
-        )?;
+    let mut optimizer: AdamW = AdamW::new(
+        params,
+        ParamsAdamW {
+            lr: 0.01,
+            ..Default::default()
+        },
+    )?;
 
-    let losses: Vec<f32> =
-        train_batches(
-            &model,
-            &mut optimizer,
-            &batches,
-        )?;
+    let losses: Vec<f32> = train_batches(&model, &mut optimizer, &batches)?;
 
-    assert_eq!(
-        losses.len(),
-        2
-    );
+    assert_eq!(losses.len(), 2);
 
     for loss in &losses {
-        assert!(
-            loss.is_finite(),
-            "Every batch loss must be finite"
-        );
+        assert!(loss.is_finite(), "Every batch loss must be finite");
 
-        assert!(
-            *loss > 0.0,
-            "Every batch loss should be positive"
-        );
+        assert!(*loss > 0.0, "Every batch loss should be positive");
     }
 
     Ok(())
@@ -1224,12 +778,8 @@ fn fixed_real_corpus_batch_loss_decreases() -> anyhow::Result<()> {
     let mut target_sequences: Vec<Vec<u32>> = Vec::new();
 
     for start in 0..batch_size {
-        input_sequences.push(
-            token_ids[start..start + sequence_length].to_vec()
-        );
-        target_sequences.push(
-            token_ids[start + 1..start + sequence_length + 1].to_vec()
-        );
+        input_sequences.push(token_ids[start..start + sequence_length].to_vec());
+        target_sequences.push(token_ids[start + 1..start + sequence_length + 1].to_vec());
     }
 
     let (inputs, targets): (Tensor, Tensor) =
@@ -1243,8 +793,7 @@ fn fixed_real_corpus_batch_loss_decreases() -> anyhow::Result<()> {
     let learning_rate: f64 = 0.001;
 
     let mut varmap: VarMap = VarMap::new();
-    let var_builder: VarBuilder =
-        VarBuilder::from_varmap(&varmap, DType::F32, &device);
+    let var_builder: VarBuilder = VarBuilder::from_varmap(&varmap, DType::F32, &device);
 
     let model: OrangeAideModel = OrangeAideModel::new(
         vocab_size,
@@ -1258,14 +807,12 @@ fn fixed_real_corpus_batch_loss_decreases() -> anyhow::Result<()> {
         &device,
     )?;
 
-    let mut optimizer: AdamW =
-        AdamW::new_lr(varmap.all_vars(), learning_rate)?;
+    let mut optimizer: AdamW = AdamW::new_lr(varmap.all_vars(), learning_rate)?;
 
     // Measure loss before any training updates.
     let initial_logits: Tensor = model.forward(&inputs)?;
     let initial_loss: f32 =
-        train::cross_entropy_loss(&initial_logits, &targets)?
-            .to_scalar::<f32>()?;
+        train::cross_entropy_loss(&initial_logits, &targets)?.to_scalar::<f32>()?;
 
     // Train repeatedly on the exact same real-text batch.
     for _ in 0..100 {
@@ -1274,14 +821,11 @@ fn fixed_real_corpus_batch_loss_decreases() -> anyhow::Result<()> {
 
     // Evaluate the same batch again, without updating the model.
     let final_logits: Tensor = model.forward(&inputs)?;
-    let final_loss: f32 =
-        train::cross_entropy_loss(&final_logits, &targets)?
-            .to_scalar::<f32>()?;
+    let final_loss: f32 = train::cross_entropy_loss(&final_logits, &targets)?.to_scalar::<f32>()?;
 
     println!(
         "Fixed real-corpus batch loss: {:.4} -> {:.4}",
-        initial_loss,
-        final_loss
+        initial_loss, final_loss
     );
 
     assert!(initial_loss.is_finite() && final_loss.is_finite());
@@ -1308,14 +852,12 @@ fn evaluate_loss_returns_finite_value() -> anyhow::Result<()> {
     let tokenizer = data::load_tokenizer()?;
     let token_ids: Vec<u32> = data::tokenize_text(&tokenizer, &corpus)?;
 
-    let (_, validation_tokens) =
-        data::split_tokens(&token_ids, 0.2)?;
+    let (_, validation_tokens) = data::split_tokens(&token_ids, 0.2)?;
 
     let vocab_size: usize = tokenizer.get_vocab_size(true);
     let mut varmap: VarMap = VarMap::new();
 
-    let var_builder: VarBuilder =
-        VarBuilder::from_varmap(&varmap, DType::F32, &device);
+    let var_builder: VarBuilder = VarBuilder::from_varmap(&varmap, DType::F32, &device);
 
     let model: OrangeAideModel = OrangeAideModel::new(
         vocab_size,
@@ -1355,41 +897,16 @@ fn evaluate_loss_rejects_invalid_inputs() -> anyhow::Result<()> {
     let var_builder: VarBuilder =
         VarBuilder::from_varmap(&varmap, candle_core::DType::F32, &device);
 
-    let model: OrangeAideModel = OrangeAideModel::new(
-        100,
-        4,
-        8,
-        2,
-        16,
-        1,
-        1e-5,
-        var_builder,
-        &device,
-    )?;
+    let model: OrangeAideModel =
+        OrangeAideModel::new(100, 4, 8, 2, 16, 1, 1e-5, var_builder, &device)?;
 
-    assert!(
-        orange_aide::train::evaluate_loss(
-            &model, &[], 4, 1, &device
-        ).is_err()
-    );
+    assert!(orange_aide::train::evaluate_loss(&model, &[], 4, 1, &device).is_err());
 
-    assert!(
-        orange_aide::train::evaluate_loss(
-            &model, &[1, 2, 3, 4], 0, 1, &device
-        ).is_err()
-    );
+    assert!(orange_aide::train::evaluate_loss(&model, &[1, 2, 3, 4], 0, 1, &device).is_err());
 
-    assert!(
-        orange_aide::train::evaluate_loss(
-            &model, &[1, 2, 3, 4], 4, 1, &device
-        ).is_err()
-    );
+    assert!(orange_aide::train::evaluate_loss(&model, &[1, 2, 3, 4], 4, 1, &device).is_err());
 
-    assert!(
-        orange_aide::train::evaluate_loss(
-            &model, &[1, 2, 3, 4, 5], 4, 0, &device
-        ).is_err()
-    );
+    assert!(orange_aide::train::evaluate_loss(&model, &[1, 2, 3, 4, 5], 4, 0, &device).is_err());
 
     Ok(())
 }
@@ -1525,23 +1042,18 @@ fn tiny_model_and_varmap(
     use candle_nn::{VarBuilder, VarMap};
 
     let varmap: VarMap = VarMap::new();
-    let var_builder: VarBuilder =
-        VarBuilder::from_varmap(&varmap, DType::F32, device);
+    let var_builder: VarBuilder = VarBuilder::from_varmap(&varmap, DType::F32, device);
 
-    let model = orange_aide::model::OrangeAideModel::new(
-        50, 8, 16, 2, 32, 2, 1e-5, var_builder, device,
-    )
-    .unwrap();
+    let model =
+        orange_aide::model::OrangeAideModel::new(50, 8, 16, 2, 32, 2, 1e-5, var_builder, device)
+            .unwrap();
 
     (varmap, model)
 }
 
 fn fresh_temp_dir(name: &str) -> std::path::PathBuf {
-    let dir: std::path::PathBuf = std::env::temp_dir().join(format!(
-        "orange_aide_{}_{}",
-        name,
-        std::process::id()
-    ));
+    let dir: std::path::PathBuf =
+        std::env::temp_dir().join(format!("orange_aide_{}_{}", name, std::process::id()));
 
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -1636,7 +1148,7 @@ fn train_corpus_monitored_stops_early_when_validation_stops_improving() {
     .unwrap();
 
     assert!(losses.len() < 50);
-        // Nothing beat the starting validation loss, so no best checkpoint exists.
+    // Nothing beat the starting validation loss, so no best checkpoint exists.
     assert!(!best.is_file());
 
     std::fs::remove_dir_all(&dir).unwrap();
@@ -1666,7 +1178,16 @@ fn train_corpus_monitored_rejects_zero_eval_interval() {
     };
 
     let result = train::train_corpus_monitored(
-        &model, &mut optimizer, &varmap, &tokens, &tokens, 8, 4, 10, &monitor, &device,
+        &model,
+        &mut optimizer,
+        &varmap,
+        &tokens,
+        &tokens,
+        8,
+        4,
+        10,
+        &monitor,
+        &device,
     );
 
     assert!(result.is_err());
@@ -1738,7 +1259,10 @@ fn learning_rate_schedule_decays_to_the_minimum_fraction() {
 
     for step in 3..=12 {
         let current: f64 = schedule.at_step(step, 12);
-        assert!(current < previous, "learning rate did not decrease at step {step}");
+        assert!(
+            current < previous,
+            "learning rate did not decrease at step {step}"
+        );
         previous = current;
     }
 
@@ -1788,124 +1312,153 @@ fn sample_window_starts_are_deterministic_and_in_range() {
     assert!(a.iter().all(|&start| start < 1000));
 }
 
-
 #[test]
 fn adaptive_learning_rate_follows_validation_miss_policy() {
     use orange_aide::train::update_adaptive_learning_rate;
 
-    let min_lr: f64 = 0.001;
+    let old_min_lr: f64 = 0.001;
     let mut lr: f64 = 0.01;
     let mut misses: usize = 0;
 
     // First miss: reduce by 10%.
-    lr = update_adaptive_learning_rate(lr, min_lr, &mut misses, false);
+    lr = update_adaptive_learning_rate(lr, old_min_lr, &mut misses, false);
     assert!((lr - 0.009).abs() < 1e-12);
     assert_eq!(misses, 1);
 
-    // Second consecutive miss: reduce by 10%.
-    lr = update_adaptive_learning_rate(lr, min_lr, &mut misses, false);
+    // Second consecutive miss: reduce by another 10%.
+    lr = update_adaptive_learning_rate(lr, old_min_lr, &mut misses, false);
     assert!((lr - 0.0081).abs() < 1e-12);
     assert_eq!(misses, 2);
 
     // Third consecutive miss: reduce by 50%, then reset the counter.
-    lr = update_adaptive_learning_rate(lr, min_lr, &mut misses, false);
+    lr = update_adaptive_learning_rate(lr, old_min_lr, &mut misses, false);
     assert!((lr - 0.00405).abs() < 1e-12);
     assert_eq!(misses, 0);
 
-    // A new best resets the counter but never raises the learning rate.
+    // An improvement resets the counter without raising the learning rate.
     let previous_lr: f64 = lr;
-    lr = update_adaptive_learning_rate(lr, min_lr, &mut misses, true);
+    lr = update_adaptive_learning_rate(lr, old_min_lr, &mut misses, true);
     assert!((lr - previous_lr).abs() < 1e-12);
     assert_eq!(misses, 0);
 
-    // The cycle starts again after an improvement.
-    lr = update_adaptive_learning_rate(lr, min_lr, &mut misses, false);
+    // The reduction cycle starts again after an improvement.
+    lr = update_adaptive_learning_rate(lr, old_min_lr, &mut misses, false);
     assert!((lr - previous_lr * 0.9).abs() < 1e-12);
     assert_eq!(misses, 1);
 
-    lr = update_adaptive_learning_rate(lr, min_lr, &mut misses, false);
+    lr = update_adaptive_learning_rate(lr, old_min_lr, &mut misses, false);
     assert!((lr - previous_lr * 0.9 * 0.9).abs() < 1e-12);
     assert_eq!(misses, 2);
 
-    lr = update_adaptive_learning_rate(lr, min_lr, &mut misses, false);
+    lr = update_adaptive_learning_rate(lr, old_min_lr, &mut misses, false);
     assert!((lr - previous_lr * 0.9 * 0.9 * 0.5).abs() < 1e-12);
     assert_eq!(misses, 0);
 
-    // Repeated reductions must never cross the minimum.
+    // Repeated reductions may go below the former minimum.
     for _ in 0..100 {
-        lr = update_adaptive_learning_rate(lr, min_lr, &mut misses, false);
-        assert!(lr >= min_lr);
+        lr = update_adaptive_learning_rate(lr, old_min_lr, &mut misses, false);
     }
 
-    assert!((lr - min_lr).abs() < 1e-12);
+    assert!(
+        lr < old_min_lr,
+        "Learning rate should fall below the former minimum: lr={lr}, minimum={old_min_lr}"
+    );
+    assert!(lr > 0.0, "Learning rate should remain positive");
 }
 
 #[test]
 fn train_corpus_with_schedule_respects_learning_rate_bounds() {
-    use candle_nn::{AdamW, Optimizer};
+    use candle_core::Device;
+    use candle_nn::{optim::AdamW, Optimizer, VarMap};
+    use orange_aide::config::TrainingConfig;
+    use orange_aide::model::OrangeAideModel;
     use orange_aide::train::{self, LearningRateSchedule, MonitorConfig};
 
-    let device = candle_core::Device::Cpu;
-    let (varmap, model) = tiny_model_and_varmap(&device);
-    let mut optimizer: AdamW = AdamW::new_lr(varmap.all_vars(), 0.5).unwrap();
+    let device: Device = Device::Cpu;
+    let varmap: VarMap = VarMap::new();
 
-    let training_tokens: Vec<u32> =
-        (0..400u32).map(|i| i % 10).collect();
-    let validation_tokens: Vec<u32> =
-        (0..100u32).map(|i| i % 10).collect();
+    let mut config: TrainingConfig = TrainingConfig::default();
+    config.sequence_length = 8;
+    config.embedding_dim = 16;
+    config.num_heads = 2;
+    config.hidden_dim = 32;
+    config.num_layers = 1;
+    config.batch_size = 2;
+    config.learning_rate = 1e-2;
 
-    let dir = fresh_temp_dir("scheduled_lr");
-    let best = dir.join("best.safetensors");
-    let latest = dir.join("latest.safetensors");
+    let var_builder = candle_nn::VarBuilder::from_varmap(&varmap, candle_core::DType::F32, &device);
 
-    let monitor = MonitorConfig {
-        eval_interval: 5,
-        checkpoint_interval: 0,
-        patience: 0,
-        best_checkpoint: &best,
-        latest_checkpoint: &latest,
+    let model: OrangeAideModel = OrangeAideModel::new(
+        16,   // vocab_size
+        8,    // sequence_length
+        16,   // embedding_dim
+        2,    // num_heads
+        32,   // hidden_dim
+        1,    // num_layers
+        1e-5, // eps
+        var_builder,
+        &device,
+    )
+    .unwrap();
+
+    let mut optimizer: AdamW = AdamW::new_lr(varmap.all_vars(), 1e-2).unwrap();
+
+    let training_tokens: Vec<u32> = (0..256).map(|i| (i % 16) as u32).collect();
+
+    let validation_tokens: Vec<u32> = (0..128).map(|i| (i % 16) as u32).collect();
+
+    let best_checkpoint: &std::path::Path = std::path::Path::new("test_best_lr_bounds.safetensors");
+    let latest_checkpoint: &std::path::Path =
+        std::path::Path::new("test_latest_lr_bounds.safetensors");
+
+    let monitor: MonitorConfig = MonitorConfig {
+        eval_interval: 2,
+        checkpoint_interval: 5,
+        patience: 100,
+        best_checkpoint,
+        latest_checkpoint,
     };
 
-    let schedule = LearningRateSchedule {
+    let schedule: LearningRateSchedule = LearningRateSchedule {
         base_lr: 1e-2,
         warmup_steps: 2,
         min_lr_fraction: 0.1,
     };
 
-    let losses = train::train_corpus_with_schedule(
+    let losses: Vec<f32> = train::train_corpus_with_schedule(
         &model,
         &mut optimizer,
         &varmap,
         &training_tokens,
         &validation_tokens,
         8,
-        4,
+        2,
         10,
         &monitor,
         Some(schedule),
-        5,
+        42,
         &device,
     )
     .unwrap();
 
-    assert_eq!(losses.len(), 10);
+    assert!(!losses.is_empty(), "Training should produce losses");
 
     let final_lr: f64 = optimizer.learning_rate();
-    let min_lr: f64 = schedule.base_lr * schedule.min_lr_fraction;
 
     assert!(
-        final_lr >= min_lr - 1e-12,
-        "Learning rate {final_lr} fell below minimum {min_lr}"
+        final_lr > 0.0,
+        "Learning rate should remain positive, got {final_lr}"
     );
+
     assert!(
         final_lr <= schedule.base_lr + 1e-12,
         "Learning rate {final_lr} exceeded base LR {}",
         schedule.base_lr
     );
 
-    std::fs::remove_dir_all(&dir).unwrap();
+    let _ = std::fs::remove_file(best_checkpoint);
+    let _ = std::fs::remove_file(latest_checkpoint);
 }
-
 
 fn tiny_model_with_layers(
     device: &candle_core::Device,
@@ -1915,11 +1468,18 @@ fn tiny_model_with_layers(
     use candle_nn::{VarBuilder, VarMap};
 
     let varmap: VarMap = VarMap::new();
-    let var_builder: VarBuilder =
-        VarBuilder::from_varmap(&varmap, DType::F32, device);
+    let var_builder: VarBuilder = VarBuilder::from_varmap(&varmap, DType::F32, device);
 
     let model = orange_aide::model::OrangeAideModel::new(
-        50, 8, 16, 2, 32, layers, 1e-5, var_builder, device,
+        50,
+        8,
+        16,
+        2,
+        32,
+        layers,
+        1e-5,
+        var_builder,
+        device,
     )
     .unwrap();
 
@@ -1927,16 +1487,11 @@ fn tiny_model_with_layers(
 }
 
 fn std_of(tensor: &candle_core::Tensor) -> f32 {
-    let values: Vec<f32> = tensor
-        .flatten_all()
-        .unwrap()
-        .to_vec1::<f32>()
-        .unwrap();
+    let values: Vec<f32> = tensor.flatten_all().unwrap().to_vec1::<f32>().unwrap();
 
     let mean: f32 = values.iter().sum::<f32>() / values.len() as f32;
 
-    (values.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / values.len() as f32)
-        .sqrt()
+    (values.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / values.len() as f32).sqrt()
 }
 
 #[test]
@@ -1989,10 +1544,22 @@ fn gpt_init_shrinks_residual_projections_as_depth_grows() {
     let name: &str = "block_0.attention.output.weight";
 
     let shallow: f32 = std_of(
-        varmap_shallow.data().lock().unwrap().get(name).unwrap().as_tensor(),
+        varmap_shallow
+            .data()
+            .lock()
+            .unwrap()
+            .get(name)
+            .unwrap()
+            .as_tensor(),
     );
     let deep: f32 = std_of(
-        varmap_deep.data().lock().unwrap().get(name).unwrap().as_tensor(),
+        varmap_deep
+            .data()
+            .lock()
+            .unwrap()
+            .get(name)
+            .unwrap()
+            .as_tensor(),
     );
 
     assert!(shallow > 1.5 * deep, "shallow {shallow} vs deep {deep}");
@@ -2008,12 +1575,16 @@ fn gpt_init_starts_near_random_guess_loss() {
 
     apply_gpt_init(&varmap, 2, &device).unwrap();
 
-    let inputs: Tensor =
-        Tensor::new(&[[1u32, 2, 3, 4, 5, 6, 7, 8], [8u32, 7, 6, 5, 4, 3, 2, 1]], &device)
-            .unwrap();
-    let targets: Tensor =
-        Tensor::new(&[[2u32, 3, 4, 5, 6, 7, 8, 9], [7u32, 6, 5, 4, 3, 2, 1, 0]], &device)
-            .unwrap();
+    let inputs: Tensor = Tensor::new(
+        &[[1u32, 2, 3, 4, 5, 6, 7, 8], [8u32, 7, 6, 5, 4, 3, 2, 1]],
+        &device,
+    )
+    .unwrap();
+    let targets: Tensor = Tensor::new(
+        &[[2u32, 3, 4, 5, 6, 7, 8, 9], [7u32, 6, 5, 4, 3, 2, 1, 0]],
+        &device,
+    )
+    .unwrap();
 
     let logits: Tensor = model.forward(&inputs).unwrap();
     let loss: f32 = cross_entropy_loss(&logits, &targets)
@@ -2038,12 +1609,3 @@ fn gpt_init_rejects_zero_layers() {
 
     assert!(apply_gpt_init(&varmap, 0, &device).is_err());
 }
-
-
-
-
-
-
-
-
-

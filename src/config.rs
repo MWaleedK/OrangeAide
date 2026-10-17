@@ -16,15 +16,15 @@ pub struct TrainingConfig {
 impl Default for TrainingConfig {
     fn default() -> Self {
         Self {
-            sequence_length: 64,
+            sequence_length: 128,
             embedding_dim: 256,
             num_heads: 8,
             hidden_dim: 1024,
             num_layers: 6,
 
-            learning_rate: 0.003,
-            training_steps: 20000,
-            batch_size: 32,
+            learning_rate: 0.005,
+            training_steps: 10000,
+            batch_size: 16,
 
             layer_norm_eps: 1e-5,
         }
