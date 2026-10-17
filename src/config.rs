@@ -18,13 +18,13 @@ impl Default for TrainingConfig {
         Self {
             sequence_length: 128,
             embedding_dim: 256,
-            num_heads: 32,
-            hidden_dim: 2048,
+            num_heads: 8,
+            hidden_dim: 1024,
             num_layers: 32,
 
             learning_rate: 0.005,
             training_steps: 20000,
-            batch_size: 128,
+            batch_size: 32,
 
             layer_norm_eps: 1e-5,
         }
