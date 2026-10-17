@@ -19,7 +19,7 @@ fn main() -> Result<()> {
             train_model(fresh)
         }
         Some("train-tokenizer") => data::train_tokenizer(),
-        Some("generate") => {
+        Some(command @ ("generate" | "generate-greedy")) => {
             let prompt: String = args[1..]
                 .iter()
                 .filter(|arg| arg.as_str() != "--fresh")
@@ -30,11 +30,12 @@ fn main() -> Result<()> {
             if prompt.trim().is_empty() {
                 bail!(
                     "Please provide a prompt.\n\
-                     Example: cargo run -- generate \"Once upon a time\""
+                     Example: cargo run --release -- generate \"Hello.\"\n\
+                     Example: cargo run --release -- generate-greedy \"Hello.\""
                 );
             }
 
-            generate_text(&prompt)
+            generate_text(&prompt, command == "generate-greedy")
         }
         Some(other) => {
             bail!(
@@ -43,7 +44,8 @@ fn main() -> Result<()> {
                  cargo run -- train\n\
                  cargo run -- train --fresh\n\
                  cargo run -- train-tokenizer\n\
-                 cargo run -- generate \"Your prompt here\""
+                 cargo run --release -- generate \"Your prompt here\"\n\
+                 cargo run --release -- generate-greedy \"Your prompt here\""
             );
         }
         None => {
@@ -53,7 +55,8 @@ fn main() -> Result<()> {
             println!("  cargo run -- train");
             println!("  cargo run -- train --fresh");
             println!("  cargo run -- train-tokenizer");
-            println!("  cargo run -- generate \"Your prompt here\"");
+            println!("  cargo run --release -- generate \"Your prompt here\"");
+            println!("  cargo run --release -- generate-greedy \"Your prompt here\"");
             Ok(())
         }
     }
@@ -179,17 +182,13 @@ fn train_model(fresh: bool) -> Result<()> {
         latest_checkpoint,
     };
 
-    // Agreed adaptive learning-rate policy:
-    // - Warm up to the base LR over the first 100 steps.
-    // - A new best validation loss does not reduce the LR.
-    // - First consecutive miss: reduce current LR by 10%.
-    // - Second consecutive miss: reduce current LR by 10%.
-    // - Third consecutive miss: reduce current LR by 50%, then reset
-    //   the miss counter.
-    // - Repeat this cycle until validation improves.
+    // Adaptive learning-rate policy:
+    // - Warm up over the first 100 steps.
+    // - First consecutive validation miss: reduce LR by 10%.
+    // - Second consecutive miss: reduce LR by 10%.
+    // - Third consecutive miss: reduce LR by 50%, then reset the counter.
+    // - A new best validation loss resets the miss counter.
     // - Never reduce below 10% of the base learning rate.
-    //
-    // No per-step cosine decay should be applied after warmup.
     let schedule: train::LearningRateSchedule =
         train::LearningRateSchedule {
             base_lr: config.learning_rate,
@@ -197,7 +196,6 @@ fn train_model(fresh: bool) -> Result<()> {
             min_lr_fraction: 0.1,
         };
 
-    // Use a different sampling seed for each run.
     let seed: u64 = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|elapsed| elapsed.as_nanos() as u64)
@@ -226,8 +224,7 @@ fn train_model(fresh: bool) -> Result<()> {
         println!("Last training batch loss:  {last:.4}");
     }
 
-    // Promote this run's best checkpoint only if it improved upon the
-    // starting weights, as determined by the training function.
+    // Promote this run's best checkpoint.
     if best_checkpoint.exists() {
         if checkpoint_path.exists() {
             std::fs::copy(checkpoint_path, previous_checkpoint)?;
@@ -256,7 +253,7 @@ fn train_model(fresh: bool) -> Result<()> {
     Ok(())
 }
 
-fn generate_text(prompt: &str) -> Result<()> {
+fn generate_text(prompt: &str, greedy: bool) -> Result<()> {
     let config: TrainingConfig = TrainingConfig::default();
     let device: Device = train::best_device()?;
 
@@ -296,31 +293,42 @@ fn generate_text(prompt: &str) -> Result<()> {
         );
     }
 
-    // Sampling settings: lower temperature is more conservative;
-    // higher temperature allows more variation.
-    let temperature: f32 = 0.8;
-    let top_k: usize = 40;
+    let generated_ids: Vec<u32> = if greedy {
+        println!("Generation mode: greedy");
 
-    let seed: u64 = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_nanos() as u64)
-        .unwrap_or(1);
+        generate::generate_greedy(
+            &model,
+            &prompt_ids,
+            100,
+            &device,
+        )?
+    } else {
+        println!("Generation mode: sampled (temperature 0.8, top-k 40)");
 
-    let generated_ids: Vec<u32> = generate::generate_sampled(
-        &model,
-        &prompt_ids,
-        50,
-        temperature,
-        top_k,
-        seed,
-        &device,
-    )?;
+        let temperature: f32 = 0.8;
+        let top_k: usize = 40;
+
+        let seed: u64 = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_nanos() as u64)
+            .unwrap_or(1);
+
+        generate::generate_sampled(
+            &model,
+            &prompt_ids,
+            100,
+            temperature,
+            top_k,
+            seed,
+            &device,
+        )?
+    };
 
     let output: String = tokenizer
         .decode(&generated_ids, true)
         .map_err(|err| anyhow::anyhow!(err.to_string()))?;
 
-    println!("Generated text:\n");
+    println!("\nGenerated text:\n");
     println!("{output}");
 
     Ok(())
