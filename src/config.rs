@@ -23,7 +23,7 @@ impl Default for TrainingConfig {
             num_layers: 6,
 
             learning_rate: 0.003,
-            training_steps: 5000,
+            training_steps: 10000,
             batch_size: 32,
 
             layer_norm_eps: 1e-5,

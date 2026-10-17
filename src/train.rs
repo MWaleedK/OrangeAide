@@ -5,10 +5,7 @@ use std::path::Path;
 
 use crate::model::OrangeAideModel;
 
-pub fn cross_entropy_loss(
-    logits: &Tensor,
-    targets: &Tensor,
-) -> Result<Tensor> {
+pub fn cross_entropy_loss(logits: &Tensor, targets: &Tensor) -> Result<Tensor> {
     if logits.dims().len() != 3 {
         anyhow::bail!(
             "Expected logits with shape [batch, sequence, vocab], got {:?}",
@@ -27,9 +24,7 @@ pub fn cross_entropy_loss(
     let sequence_length: usize = logits.dims()[1];
     let vocab_size: usize = logits.dims()[2];
 
-    if targets.dims()[0] != batch_size
-        || targets.dims()[1] != sequence_length
-    {
+    if targets.dims()[0] != batch_size || targets.dims()[1] != sequence_length {
         anyhow::bail!("Logits and targets dimensions do not match");
     }
 
@@ -37,19 +32,11 @@ pub fn cross_entropy_loss(
         anyhow::bail!("Vocabulary size cannot be zero");
     }
 
-    let logits_flat: Tensor = logits.reshape((
-        batch_size * sequence_length,
-        vocab_size,
-    ))?;
+    let logits_flat: Tensor = logits.reshape((batch_size * sequence_length, vocab_size))?;
 
-    let targets_flat: Tensor = targets.reshape(
-        batch_size * sequence_length,
-    )?;
+    let targets_flat: Tensor = targets.reshape(batch_size * sequence_length)?;
 
-    let log_probs: Tensor = candle_nn::ops::log_softmax(
-        &logits_flat,
-        candle_core::D::Minus1,
-    )?;
+    let log_probs: Tensor = candle_nn::ops::log_softmax(&logits_flat, candle_core::D::Minus1)?;
 
     let target_log_probs: Tensor = log_probs
         .gather(&targets_flat.unsqueeze(1)?, 1)?
@@ -90,12 +77,7 @@ pub fn train_model(
     let mut losses: Vec<f32> = Vec::with_capacity(steps);
 
     for _step in 0..steps {
-        let loss: f32 = train_step(
-            model,
-            optimizer,
-            inputs,
-            targets,
-        )?;
+        let loss: f32 = train_step(model, optimizer, inputs, targets)?;
 
         losses.push(loss);
     }
@@ -115,12 +97,7 @@ pub fn train_batches(
     let mut losses: Vec<f32> = Vec::with_capacity(batches.len());
 
     for (inputs, targets) in batches {
-        let loss: f32 = train_step(
-            model,
-            optimizer,
-            inputs,
-            targets,
-        )?;
+        let loss: f32 = train_step(model, optimizer, inputs, targets)?;
 
         losses.push(loss);
     }
@@ -154,79 +131,51 @@ pub fn train_corpus(
     }
 
     if token_ids.len() <= sequence_length {
-        anyhow::bail!(
-            "Corpus must contain more tokens than the sequence length"
-        );
+        anyhow::bail!("Corpus must contain more tokens than the sequence length");
     }
 
-    let max_start: usize = token_ids.len() - sequence_length - 1 + 1;
+    let max_start: usize = token_ids.len() - sequence_length;
 
     if max_start == 0 {
         anyhow::bail!("No valid training windows are available");
     }
 
     let mut losses: Vec<f32> = Vec::with_capacity(steps);
-
-    // Deterministic pseudo-random sampling; no additional crate required.
     let mut rng_state: u64 = 0xA5A5_1234_9876_FEDC;
 
     for step in 0..steps {
-        let mut input_sequences: Vec<Vec<u32>> =
-            Vec::with_capacity(batch_size);
+        let mut input_sequences: Vec<Vec<u32>> = Vec::with_capacity(batch_size);
 
-        let mut target_sequences: Vec<Vec<u32>> =
-            Vec::with_capacity(batch_size);
+        let mut target_sequences: Vec<Vec<u32>> = Vec::with_capacity(batch_size);
 
         for _ in 0..batch_size {
-            // Xorshift64 generates a repeatable sequence of sampling values.
             rng_state ^= rng_state << 13;
             rng_state ^= rng_state >> 7;
             rng_state ^= rng_state << 17;
 
             let start: usize = (rng_state as usize) % max_start;
 
-            let input: Vec<u32> =
-                token_ids[start..start + sequence_length].to_vec();
+            input_sequences.push(token_ids[start..start + sequence_length].to_vec());
 
-            let target: Vec<u32> =
-                token_ids[start + 1..start + sequence_length + 1].to_vec();
-
-            input_sequences.push(input);
-            target_sequences.push(target);
+            target_sequences.push(token_ids[start + 1..start + sequence_length + 1].to_vec());
         }
 
-        let (inputs, targets) = crate::data::batch_to_tensors(
-            &input_sequences,
-            &target_sequences,
-            device,
-        )?;
+        let (inputs, targets) =
+            crate::data::batch_to_tensors(&input_sequences, &target_sequences, device)?;
 
-        let loss: f32 = train_step(
-            model,
-            optimizer,
-            &inputs,
-            &targets,
-        )?;
+        let loss: f32 = train_step(model, optimizer, &inputs, &targets)?;
 
         losses.push(loss);
 
         if (step + 1) % 100 == 0 {
-            println!(
-                "Step {}/{} | Loss: {:.4}",
-                step + 1,
-                steps,
-                loss
-            );
+            println!("Step {}/{} | Loss: {:.4}", step + 1, steps, loss);
         }
     }
 
     Ok(losses)
 }
 
-pub fn save_checkpoint(
-    varmap: &VarMap,
-    path: &Path,
-) -> Result<()> {
+pub fn save_checkpoint(varmap: &VarMap, path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -236,15 +185,9 @@ pub fn save_checkpoint(
     Ok(())
 }
 
-pub fn load_checkpoint(
-    varmap: &mut VarMap,
-    path: &Path,
-) -> Result<()> {
+pub fn load_checkpoint(varmap: &mut VarMap, path: &Path) -> Result<()> {
     if !path.is_file() {
-        anyhow::bail!(
-            "Checkpoint file does not exist: {}",
-            path.display()
-        );
+        anyhow::bail!("Checkpoint file does not exist: {}", path.display());
     }
 
     varmap.load(path)?;
@@ -253,14 +196,7 @@ pub fn load_checkpoint(
 }
 
 /// Start indices of non-overlapping validation windows.
-///
-/// Each window needs `sequence_length` input tokens plus one extra token
-/// for the final target, so a window starting at `start` is only valid
-/// when `start + sequence_length + 1 <= token_count`.
-pub fn validation_window_starts(
-    token_count: usize,
-    sequence_length: usize,
-) -> Vec<usize> {
+pub fn validation_window_starts(token_count: usize, sequence_length: usize) -> Vec<usize> {
     if sequence_length == 0 || token_count <= sequence_length {
         return Vec::new();
     }
@@ -290,36 +226,25 @@ pub fn evaluate_loss(
     }
 
     if token_ids.len() <= sequence_length {
-        anyhow::bail!(
-            "Validation corpus must contain more tokens than the sequence length"
-        );
+        anyhow::bail!("Validation corpus must contain more tokens than the sequence length");
     }
 
-    let window_starts: Vec<usize> =
-        validation_window_starts(token_ids.len(), sequence_length);
+    let window_starts: Vec<usize> = validation_window_starts(token_ids.len(), sequence_length);
 
     let mut total_loss: f64 = 0.0;
     let mut total_sequences: usize = 0;
 
-    // Evaluate non-overlapping windows, one batch at a time.
     for batch_starts in window_starts.chunks(batch_size) {
         let current_batch_size: usize = batch_starts.len();
 
-        let mut inputs: Vec<Vec<u32>> =
-            Vec::with_capacity(current_batch_size);
+        let mut inputs: Vec<Vec<u32>> = Vec::with_capacity(current_batch_size);
 
-        let mut targets: Vec<Vec<u32>> =
-            Vec::with_capacity(current_batch_size);
+        let mut targets: Vec<Vec<u32>> = Vec::with_capacity(current_batch_size);
 
         for &index in batch_starts {
-            inputs.push(
-                token_ids[index..index + sequence_length].to_vec()
-            );
+            inputs.push(token_ids[index..index + sequence_length].to_vec());
 
-            targets.push(
-                token_ids[index + 1..index + sequence_length + 1]
-                    .to_vec()
-            );
+            targets.push(token_ids[index + 1..index + sequence_length + 1].to_vec());
         }
 
         let (input_tensor, target_tensor) =
@@ -327,8 +252,7 @@ pub fn evaluate_loss(
 
         let logits: Tensor = model.forward(&input_tensor)?;
 
-        let loss: Tensor =
-            cross_entropy_loss(&logits, &target_tensor)?;
+        let loss: Tensor = cross_entropy_loss(&logits, &target_tensor)?;
 
         let loss_value: f32 = loss.to_scalar::<f32>()?;
 
@@ -347,7 +271,7 @@ pub fn evaluate_loss(
     Ok((total_loss / total_sequences as f64) as f32)
 }
 
-/// True when `step_number` (counting from 1) is a multiple of `interval`.
+/// True when step_number is a multiple of interval.
 /// An interval of zero never fires.
 pub fn is_interval_step(step_number: usize, interval: usize) -> bool {
     interval > 0 && step_number % interval == 0
@@ -365,9 +289,7 @@ impl BestValidation {
         Self::default()
     }
 
-        /// Starts with a known loss (for example the loaded model's loss), so
-    /// only a strictly lower loss counts as an improvement. A non-finite
-    /// baseline is ignored.
+    /// Establishes a baseline so only a strictly lower loss is an improvement.
     pub fn with_baseline(baseline_loss: f32) -> Self {
         Self {
             best: if baseline_loss.is_finite() {
@@ -379,11 +301,9 @@ impl BestValidation {
         }
     }
 
-    /// Records a validation loss. Returns true only when it is finite and
-    /// strictly lower than every previous loss.
+    /// Returns true only when a finite loss beats every previous loss.
     pub fn update(&mut self, loss: f32) -> bool {
-        let improved: bool = loss.is_finite()
-            && self.best.map_or(true, |best| loss < best);
+        let improved: bool = loss.is_finite() && self.best.map_or(true, |best| loss < best);
 
         if improved {
             self.best = Some(loss);
@@ -403,15 +323,14 @@ impl BestValidation {
         self.evaluations_since_best
     }
 
-    /// True once `patience` evaluations in a row failed to improve.
+    /// True once patience evaluations have failed to improve.
     /// A patience of zero disables early stopping.
     pub fn should_stop(&self, patience: usize) -> bool {
         patience > 0 && self.evaluations_since_best >= patience
     }
 }
 
-/// Uses the first CUDA GPU when the program was built with CUDA support
-/// and a GPU is available; otherwise falls back to the CPU.
+/// Uses the first CUDA GPU if available; otherwise falls back to CPU.
 pub fn best_device() -> Result<Device> {
     Ok(Device::cuda_if_available(0)?)
 }
@@ -419,7 +338,7 @@ pub fn best_device() -> Result<Device> {
 pub struct MonitorConfig<'a> {
     /// Run validation every this many steps (must be greater than zero).
     pub eval_interval: usize,
-    /// Save the latest weights every this many steps (zero = only at the end).
+    /// Save latest weights every this many steps (zero = only at the end).
     pub checkpoint_interval: usize,
     /// Stop after this many validations without improvement (zero = never).
     pub patience: usize,
@@ -427,11 +346,15 @@ pub struct MonitorConfig<'a> {
     pub latest_checkpoint: &'a Path,
 }
 
-/// Learning rate with a linear warmup followed by cosine decay.
+/// Configuration for adaptive learning-rate decay.
 ///
-/// Steps are counted from 1. During the first `warmup_steps` the rate rises
-/// linearly to `base_lr`; afterwards it decays along a cosine curve down to
-/// `base_lr * min_lr_fraction` at the final step.
+/// `base_lr` is the starting rate and `min_lr_fraction` defines the minimum
+/// rate as a fraction of `base_lr`. Warmup rises linearly to `base_lr`.
+///
+/// After warmup, the rate remains unchanged when validation improves.
+/// A validation result that fails to beat the best so far reduces the current
+/// rate by 10%. Every third consecutive miss instead reduces it by 50%, then
+/// resets the adaptive counter.
 #[derive(Debug, Clone, Copy)]
 pub struct LearningRateSchedule {
     pub base_lr: f64,
@@ -440,7 +363,9 @@ pub struct LearningRateSchedule {
 }
 
 impl LearningRateSchedule {
-    /// A schedule that always returns `learning_rate`.
+    /// Configure an unchanged learning rate with no adaptive reductions.
+    ///
+    /// Use a `min_lr_fraction` of 1.0 to prevent the rate from decreasing.
     pub fn constant(learning_rate: f64) -> Self {
         Self {
             base_lr: learning_rate,
@@ -449,26 +374,49 @@ impl LearningRateSchedule {
         }
     }
 
+    /// Retained as a cosine-rate utility for callers that need it.
+    /// `train_corpus_with_schedule` uses adaptive validation-driven decay
+    /// instead of this method.
     pub fn at_step(&self, step_number: usize, total_steps: usize) -> f64 {
         let min_lr: f64 = self.base_lr * self.min_lr_fraction;
 
         if self.warmup_steps > 0 && step_number <= self.warmup_steps {
-            return self.base_lr * step_number as f64
-                / self.warmup_steps as f64;
+            return self.base_lr * step_number as f64 / self.warmup_steps as f64;
         }
 
-        let decay_steps: usize =
-            total_steps.saturating_sub(self.warmup_steps).max(1);
+        let decay_steps: usize = total_steps.saturating_sub(self.warmup_steps).max(1);
 
-        let progress: f64 = (step_number.saturating_sub(self.warmup_steps)
-            as f64
+        let progress: f64 = (step_number.saturating_sub(self.warmup_steps) as f64
             / decay_steps as f64)
             .clamp(0.0, 1.0);
 
-        min_lr
-            + 0.5
-                * (self.base_lr - min_lr)
-                * (1.0 + (std::f64::consts::PI * progress).cos())
+        min_lr + 0.5 * (self.base_lr - min_lr) * (1.0 + (std::f64::consts::PI * progress).cos())
+    }
+}
+
+/// Updates the adaptive learning rate after a validation result.
+///
+/// An improvement resets the miss counter without increasing the LR.
+/// Misses reduce the current LR by 10%, 10%, then 50%, repeating.
+/// The rate never falls below `min_lr`.
+pub fn update_adaptive_learning_rate(
+    current_lr: f64,
+    min_lr: f64,
+    consecutive_misses: &mut usize,
+    improved: bool,
+) -> f64 {
+    if improved {
+        *consecutive_misses = 0;
+        return current_lr;
+    }
+
+    *consecutive_misses += 1;
+
+    if *consecutive_misses >= 3 {
+        *consecutive_misses = 0;
+        (current_lr * 0.5).max(min_lr)
+    } else {
+        (current_lr * 0.9).max(min_lr)
     }
 }
 
@@ -482,8 +430,7 @@ fn xorshift64(state: &mut u64) -> u64 {
 
 /// Turns a seed into a well-mixed, non-zero random state.
 pub fn rng_state_from_seed(seed: u64) -> u64 {
-    let mut state: u64 =
-        seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0xA5A5_1234_9876_FEDC;
+    let mut state: u64 = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0xA5A5_1234_9876_FEDC;
 
     if state == 0 {
         state = 0xA5A5_1234_9876_FEDC;
@@ -496,19 +443,15 @@ pub fn rng_state_from_seed(seed: u64) -> u64 {
     state
 }
 
-/// Random window start positions in `0..max_start`.
-pub fn sample_window_starts(
-    rng_state: &mut u64,
-    max_start: usize,
-    count: usize,
-) -> Vec<usize> {
+/// Samples window starts from `0..max_start`.
+pub fn sample_window_starts(rng_state: &mut u64, max_start: usize, count: usize) -> Vec<usize> {
     (0..count)
         .map(|_| (xorshift64(rng_state) as usize) % max_start)
         .collect()
 }
 
-/// Same as `train_corpus_with_schedule` with no learning-rate schedule
-/// (the optimizer keeps its own rate) and a fixed sampling seed.
+/// Trains without a supplied adaptive schedule. The optimizer retains its
+/// configured learning rate.
 pub fn train_corpus_monitored(
     model: &OrangeAideModel,
     optimizer: &mut AdamW,
@@ -537,13 +480,19 @@ pub fn train_corpus_monitored(
     )
 }
 
-/// Trains with periodic validation, best/latest checkpoints, early
-/// stopping, an optional learning-rate schedule, and a seed that controls
-/// which training windows are sampled (use a different seed per run).
+/// Trains with periodic validation, best/latest checkpoints, early stopping,
+/// optional warmup and adaptive learning-rate reductions.
 ///
-/// The model's validation loss is measured before training starts. The
-/// "best" checkpoint is only written when a later validation loss beats
-/// it, so a run can never replace better weights with worse ones.
+/// Adaptive policy after warmup:
+/// - Best validation loss: no decay and reset the miss counter.
+/// - First consecutive miss: reduce current LR by 10%.
+/// - Second consecutive miss: reduce current LR by 10%.
+/// - Third consecutive miss: reduce current LR by 50% instead, then reset
+///   the miss counter.
+/// - Repeat until validation improves or the minimum LR is reached.
+///
+/// A miss means validation loss is equal to or worse than the best so far.
+/// Checkpoint and early-stopping behavior is preserved.
 pub fn train_corpus_with_schedule(
     model: &OrangeAideModel,
     optimizer: &mut AdamW,
@@ -575,9 +524,7 @@ pub fn train_corpus_with_schedule(
     }
 
     if training_tokens.len() <= sequence_length {
-        anyhow::bail!(
-            "Corpus must contain more tokens than the sequence length"
-        );
+        anyhow::bail!("Corpus must contain more tokens than the sequence length");
     }
 
     let max_start: usize = training_tokens.len() - sequence_length;
@@ -592,8 +539,7 @@ pub fn train_corpus_with_schedule(
 
     println!("Starting validation loss: {:.4}", starting_validation_loss);
 
-    let mut tracker: BestValidation =
-        BestValidation::with_baseline(starting_validation_loss);
+    let mut tracker: BestValidation = BestValidation::with_baseline(starting_validation_loss);
 
     let mut losses: Vec<f32> = Vec::with_capacity(steps);
     let mut rng_state: u64 = rng_state_from_seed(seed);
@@ -601,38 +547,69 @@ pub fn train_corpus_with_schedule(
     let mut interval_loss_sum: f64 = 0.0;
     let mut interval_steps: usize = 0;
 
+    let mut current_lr: f64 = schedule
+        .map(|s| s.base_lr)
+        .unwrap_or_else(|| optimizer.learning_rate());
+
+    let min_lr: f64 = schedule
+        .map(|s| (s.base_lr * s.min_lr_fraction).clamp(0.0, s.base_lr))
+        .unwrap_or(0.0);
+
+    let mut consecutive_misses: usize = 0;
+
+    if let Some(s) = schedule {
+        if !s.base_lr.is_finite() || s.base_lr <= 0.0 {
+            anyhow::bail!("Base learning rate must be finite and positive");
+        }
+
+        if !s.min_lr_fraction.is_finite() || !(0.0..=1.0).contains(&s.min_lr_fraction) {
+            anyhow::bail!("Minimum learning-rate fraction must be between 0.0 and 1.0");
+        }
+    }
+
+    println!(
+        "Learning-rate policy: adaptive validation-driven decay{}",
+        if schedule.is_some() {
+            ""
+        } else {
+            " (no schedule supplied; optimizer rate remains unchanged)"
+        }
+    );
+
+    if let Some(s) = schedule {
+        println!(
+            "Base LR: {:.8} | Minimum LR: {:.8} | Warmup steps: {}",
+            s.base_lr, min_lr, s.warmup_steps
+        );
+    }
+
     for step in 0..steps {
         let step_number: usize = step + 1;
 
-        if let Some(schedule) = schedule {
-            optimizer.set_learning_rate(schedule.at_step(step_number, steps));
+        // Warmup only. Once warmup ends, do not overwrite adaptive
+        // reductions with a per-step cosine schedule.
+        if let Some(s) = schedule {
+            if s.warmup_steps > 0 && step_number <= s.warmup_steps {
+                current_lr = s.base_lr * step_number as f64 / s.warmup_steps as f64;
+
+                optimizer.set_learning_rate(current_lr);
+            }
         }
 
-        let starts: Vec<usize> =
-            sample_window_starts(&mut rng_state, max_start, batch_size);
+        let starts: Vec<usize> = sample_window_starts(&mut rng_state, max_start, batch_size);
 
-        let mut input_sequences: Vec<Vec<u32>> =
-            Vec::with_capacity(batch_size);
+        let mut input_sequences: Vec<Vec<u32>> = Vec::with_capacity(batch_size);
 
-        let mut target_sequences: Vec<Vec<u32>> =
-            Vec::with_capacity(batch_size);
+        let mut target_sequences: Vec<Vec<u32>> = Vec::with_capacity(batch_size);
 
         for start in starts {
-            input_sequences.push(
-                training_tokens[start..start + sequence_length].to_vec(),
-            );
+            input_sequences.push(training_tokens[start..start + sequence_length].to_vec());
 
-            target_sequences.push(
-                training_tokens[start + 1..start + sequence_length + 1]
-                    .to_vec(),
-            );
+            target_sequences.push(training_tokens[start + 1..start + sequence_length + 1].to_vec());
         }
 
-        let (inputs, targets) = crate::data::batch_to_tensors(
-            &input_sequences,
-            &target_sequences,
-            device,
-        )?;
+        let (inputs, targets) =
+            crate::data::batch_to_tensors(&input_sequences, &target_sequences, device)?;
 
         let loss: f32 = train_step(model, optimizer, &inputs, &targets)?;
 
@@ -659,8 +636,26 @@ pub fn train_corpus_with_schedule(
 
             let improved: bool = tracker.update(validation_loss);
 
+            if improved {
+                consecutive_misses = 0;
+            } else if let Some(s) = schedule {
+                // Do not adapt during warmup.
+                if step_number > s.warmup_steps {
+                    current_lr = update_adaptive_learning_rate(
+                        current_lr,
+                        min_lr,
+                        &mut consecutive_misses,
+                        false,
+                    );
+
+                    optimizer.set_learning_rate(current_lr);
+
+                    println!("Validation miss: LR adjusted to {:.8}", current_lr);
+                }
+            }
+
             println!(
-                "Step {}/{} | lr {:.6} | train loss {:.4} | validation loss {:.4}{}",
+                "Step {}/{} | lr {:.8} | train loss {:.4} | validation loss {:.4}{}",
                 step_number,
                 steps,
                 optimizer.learning_rate(),
@@ -695,24 +690,14 @@ pub fn train_corpus_with_schedule(
     Ok(losses)
 }
 
-/// GPT-2 style initialization for a freshly created model.
+/// GPT-2-style initialization for a freshly created model.
 ///
-/// * Weights (including the embeddings and the output layer) are drawn
-///   from a normal distribution with standard deviation 0.02.
-/// * The two layers that write back into the residual stream (the
-///   attention output and the second feed-forward layer) use a smaller
-///   deviation, 0.02 / sqrt(2 * num_layers), so a deep model starts out
-///   close to "pass the token information straight through" instead of
-///   drowning it in random noise.
-/// * Biases are zero. Layer-norm parameters are left unchanged.
+/// Weights use a normal distribution with standard deviation 0.02, except
+/// residual output projections, which use 0.02 / sqrt(2 * num_layers).
+/// Biases are zero; layer-normalization parameters are left unchanged.
 ///
-/// Call this only on a model that is about to be trained from scratch,
-/// never after loading a checkpoint.
-pub fn apply_gpt_init(
-    varmap: &VarMap,
-    num_layers: usize,
-    device: &Device,
-) -> Result<()> {
+/// Call only on a fresh model, never after loading a checkpoint.
+pub fn apply_gpt_init(varmap: &VarMap, num_layers: usize, device: &Device) -> Result<()> {
     if num_layers == 0 {
         anyhow::bail!("Number of layers cannot be zero");
     }
@@ -735,13 +720,12 @@ pub fn apply_gpt_init(
         let new_values: Tensor = if name.ends_with(".bias") {
             Tensor::zeros(&shape, candle_core::DType::F32, device)?
         } else {
-            let std: f32 = if name.contains("attention.output")
-                || name.contains("feed_forward.second")
-            {
-                residual_std
-            } else {
-                default_std
-            };
+            let std: f32 =
+                if name.contains("attention.output") || name.contains("feed_forward.second") {
+                    residual_std
+                } else {
+                    default_std
+                };
 
             Tensor::randn(0f32, std, &shape, device)?
         };
@@ -751,6 +735,3 @@ pub fn apply_gpt_init(
 
     Ok(())
 }
-
-
-

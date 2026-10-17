@@ -1788,8 +1788,60 @@ fn sample_window_starts_are_deterministic_and_in_range() {
     assert!(a.iter().all(|&start| start < 1000));
 }
 
+
 #[test]
-fn train_corpus_with_schedule_ends_at_the_minimum_learning_rate() {
+fn adaptive_learning_rate_follows_validation_miss_policy() {
+    use orange_aide::train::update_adaptive_learning_rate;
+
+    let min_lr: f64 = 0.001;
+    let mut lr: f64 = 0.01;
+    let mut misses: usize = 0;
+
+    // First miss: reduce by 10%.
+    lr = update_adaptive_learning_rate(lr, min_lr, &mut misses, false);
+    assert!((lr - 0.009).abs() < 1e-12);
+    assert_eq!(misses, 1);
+
+    // Second consecutive miss: reduce by 10%.
+    lr = update_adaptive_learning_rate(lr, min_lr, &mut misses, false);
+    assert!((lr - 0.0081).abs() < 1e-12);
+    assert_eq!(misses, 2);
+
+    // Third consecutive miss: reduce by 50%, then reset the counter.
+    lr = update_adaptive_learning_rate(lr, min_lr, &mut misses, false);
+    assert!((lr - 0.00405).abs() < 1e-12);
+    assert_eq!(misses, 0);
+
+    // A new best resets the counter but never raises the learning rate.
+    let previous_lr: f64 = lr;
+    lr = update_adaptive_learning_rate(lr, min_lr, &mut misses, true);
+    assert!((lr - previous_lr).abs() < 1e-12);
+    assert_eq!(misses, 0);
+
+    // The cycle starts again after an improvement.
+    lr = update_adaptive_learning_rate(lr, min_lr, &mut misses, false);
+    assert!((lr - previous_lr * 0.9).abs() < 1e-12);
+    assert_eq!(misses, 1);
+
+    lr = update_adaptive_learning_rate(lr, min_lr, &mut misses, false);
+    assert!((lr - previous_lr * 0.9 * 0.9).abs() < 1e-12);
+    assert_eq!(misses, 2);
+
+    lr = update_adaptive_learning_rate(lr, min_lr, &mut misses, false);
+    assert!((lr - previous_lr * 0.9 * 0.9 * 0.5).abs() < 1e-12);
+    assert_eq!(misses, 0);
+
+    // Repeated reductions must never cross the minimum.
+    for _ in 0..100 {
+        lr = update_adaptive_learning_rate(lr, min_lr, &mut misses, false);
+        assert!(lr >= min_lr);
+    }
+
+    assert!((lr - min_lr).abs() < 1e-12);
+}
+
+#[test]
+fn train_corpus_with_schedule_respects_learning_rate_bounds() {
     use candle_nn::{AdamW, Optimizer};
     use orange_aide::train::{self, LearningRateSchedule, MonitorConfig};
 
@@ -1797,8 +1849,10 @@ fn train_corpus_with_schedule_ends_at_the_minimum_learning_rate() {
     let (varmap, model) = tiny_model_and_varmap(&device);
     let mut optimizer: AdamW = AdamW::new_lr(varmap.all_vars(), 0.5).unwrap();
 
-    let training_tokens: Vec<u32> = (0..400u32).map(|i| i % 10).collect();
-    let validation_tokens: Vec<u32> = (0..100u32).map(|i| i % 10).collect();
+    let training_tokens: Vec<u32> =
+        (0..400u32).map(|i| i % 10).collect();
+    let validation_tokens: Vec<u32> =
+        (0..100u32).map(|i| i % 10).collect();
 
     let dir = fresh_temp_dir("scheduled_lr");
     let best = dir.join("best.safetensors");
@@ -1818,7 +1872,7 @@ fn train_corpus_with_schedule_ends_at_the_minimum_learning_rate() {
         min_lr_fraction: 0.1,
     };
 
-    let losses: Vec<f32> = train::train_corpus_with_schedule(
+    let losses = train::train_corpus_with_schedule(
         &model,
         &mut optimizer,
         &varmap,
@@ -1835,10 +1889,24 @@ fn train_corpus_with_schedule_ends_at_the_minimum_learning_rate() {
     .unwrap();
 
     assert_eq!(losses.len(), 10);
-    assert!((optimizer.learning_rate() - 1e-3).abs() < 1e-9);
+
+    let final_lr: f64 = optimizer.learning_rate();
+    let min_lr: f64 = schedule.base_lr * schedule.min_lr_fraction;
+
+    assert!(
+        final_lr >= min_lr - 1e-12,
+        "Learning rate {final_lr} fell below minimum {min_lr}"
+    );
+    assert!(
+        final_lr <= schedule.base_lr + 1e-12,
+        "Learning rate {final_lr} exceeded base LR {}",
+        schedule.base_lr
+    );
 
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+
 fn tiny_model_with_layers(
     device: &candle_core::Device,
     layers: usize,
